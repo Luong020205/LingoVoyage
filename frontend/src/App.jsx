@@ -1,35 +1,61 @@
-import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from '/vite.svg'
-import './App.css'
+// frontend/src/App.jsx
+
+import { useState, useEffect } from 'react';
+import './App.css';
 
 function App() {
-  const [count, setCount] = useState(0)
+    const [provinces, setProvinces] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
 
-  return (
-    <>
-      <div>
-        <a href="https://vite.dev" target="_blank">
-          <img src={viteLogo} className="logo" alt="Vite logo" />
-        </a>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
-      </div>
-      <h1>Vite + React</h1>
-      <div className="card">
-        <button onClick={() => setCount((count) => count + 1)}>
-          count is {count}
-        </button>
-        <p>
-          Edit <code>src/App.jsx</code> and save to test HMR
-        </p>
-      </div>
-      <p className="read-the-docs">
-        Click on the Vite and React logos to learn more
-      </p>
-    </>
-  )
+    // useEffect tự động chạy khi component load lần đầu
+    useEffect(() => {
+        // Hàm lấy danh sách tỉnh
+        const fetchProvinces = async () => {
+            try {
+                const response = await fetch('http://localhost:5000/api/provinces');
+                if (!response.ok) {
+                    throw new Error('Lỗi mạng');
+                }
+                const data = await response.json();
+                setProvinces(data);
+            } catch (err) {
+                setError(err.message);
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        fetchProvinces();
+    }, []); // [] nghĩa là chỉ chạy 1 lần
+
+    if (loading) return <div>Đang tải dữ liệu...</div>;
+    if (error) return <div>Lỗi: {error}</div>;
+
+    return (
+        <div style={{ padding: '20px' }}>
+            <h1>LingoVoyage - Khám phá Việt Nam</h1>
+            
+            <h2>Danh sách tỉnh thành</h2>
+            
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px' }}>
+                {provinces.map((province) => (
+                    <div 
+                        key={province._id}
+                        style={{
+                            border: '1px solid #ddd',
+                            borderRadius: '8px',
+                            padding: '15px',
+                            textAlign: 'center'
+                        }}
+                    >
+                        <h3>{province.name}</h3>
+                        <p>Mã: {province.code}</p>
+                    </div>
+                ))}
+            </div>
+        </div>
+    );
 }
 
-export default App
+export default App;
