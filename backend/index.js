@@ -12,34 +12,28 @@ const port = 5000;
 app.use(cors());
 app.use(express.json());
 
-const MONGODB_URI = "mongodb+srv://luong1305960_db_user:nd1305tl@cluster0.m3tyt2p.mongodb.net/lingovoyage?retryWrites=true&w=majority";
+const MONGODB_URI = "mongodb+srv://luong1305960_db_user:nd1305tl@cluster0.m3tyt2p.mongodb.net/DoAn_LingoVoyage?appName=Cluster0";
 
-let Province; // khai báo model ở ngoài
+// Schema cho Tỉnh thành
+const provinceSchema = new mongoose.Schema({
+    name: { type: String, required: true },
+    slug: { type: String, required: true, unique: true },
+    code: { type: String, required: true }
+});
+
+const Province = mongoose.model("Province", provinceSchema);
 
 const startServer = async () => {
     try {
-
         await mongoose.connect(MONGODB_URI);
-
-        console.log("✅ MongoDB connected");
-
-        // TẠO SCHEMA SAU KHI CONNECT
-        const provinceSchema = new mongoose.Schema({
-            name: { type: String, required: true },
-            slug: { type: String, required: true, unique: true },
-            code: { type: String, required: true }
-        });
-
-        Province = mongoose.model("Province", provinceSchema);
+        console.log("✅ MongoDB connected to database: DoAn_LingoVoyage");
 
         app.listen(port, () => {
             console.log(`🚀 Server running at http://localhost:${port}`);
         });
 
     } catch (error) {
-
         console.error("❌ MongoDB connection error:", error);
-
     }
 };
 
@@ -49,15 +43,12 @@ startServer();
 // API lấy danh sách tỉnh
 app.get('/api/provinces', async (req, res) => {
     try {
-
         const provinces = await Province.find();
-
+        console.log(`🔍 Found ${provinces.length} provinces`);
         res.json(provinces);
-
     } catch (error) {
-
+        console.error("❌ Error fetching provinces:", error);
         res.status(500).json({ message: error.message });
-
     }
 });
 

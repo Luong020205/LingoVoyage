@@ -1,61 +1,71 @@
-// frontend/src/App.jsx
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { ToastProvider } from './context/ToastContext';
+import { AuthProvider } from './context/AuthContext';
+import { LanguageProvider } from './context/LanguageContext';
 
-import { useState, useEffect } from 'react';
-import './App.css';
+// Layouts
+import MainLayout from './layouts/MainLayout';
+import AuthLayout from './layouts/AuthLayout';
+import UserLayout from './layouts/UserLayout';
+
+// Public Pages
+import HomePage from './pages/HomePage';
+import ProvincePage from './pages/ProvincePage';
+import LandmarkPage from './pages/LandmarkPage';
+
+// Auth Pages
+import LoginPage from './pages/LoginPage';
+import RegisterPage from './pages/RegisterPage';
+import ForgotPasswordPage from './pages/ForgotPasswordPage';
+
+// User Pages
+import NotebookPage from './pages/user/NotebookPage';
+import LearningPage from './pages/user/LearningPage';
+import FlashcardGame from './pages/user/FlashcardGame';
+import QuizGame from './pages/user/QuizGame';
+import MatchGame from './pages/user/MatchGame';
+import SettingsPage from './pages/user/SettingsPage';
 
 function App() {
-    const [provinces, setProvinces] = useState([]);
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState(null);
+  return (
+    <BrowserRouter>
+      <LanguageProvider>
+        <AuthProvider>
+          <ToastProvider>
+            <Routes>
+              
+              {/* Auth Routes */}
+              <Route element={<AuthLayout />}>
+                <Route path="/login" element={<LoginPage />} />
+                <Route path="/register" element={<RegisterPage />} />
+                <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+              </Route>
 
-    // useEffect tự động chạy khi component load lần đầu
-    useEffect(() => {
-        // Hàm lấy danh sách tỉnh
-        const fetchProvinces = async () => {
-            try {
-                const response = await fetch('http://localhost:5000/api/provinces');
-                if (!response.ok) {
-                    throw new Error('Lỗi mạng');
-                }
-                const data = await response.json();
-                setProvinces(data);
-            } catch (err) {
-                setError(err.message);
-            } finally {
-                setLoading(false);
-            }
-        };
+              {/* User Routes (Dashboard) */}
+              <Route path="/user" element={<UserLayout />}>
+                <Route index element={<Navigate to="/user/notebook" replace />} />
+                <Route path="notebook" element={<NotebookPage />} />
+                <Route path="learning" element={<LearningPage />} />
+                <Route path="flashcard" element={<FlashcardGame />} />
+                <Route path="quiz" element={<QuizGame />} />
+                <Route path="match" element={<MatchGame />} />
+                <Route path="settings" element={<SettingsPage />} />
+              </Route>
 
-        fetchProvinces();
-    }, []); // [] nghĩa là chỉ chạy 1 lần
+              {/* Public Routes with MainLayout */}
+              <Route element={<MainLayout />}>
+                <Route path="/" element={<HomePage />} />
+                <Route path="/province/:slug" element={<ProvincePage />} />
+                <Route path="/province/:provinceSlug/:landmarkSlug" element={<LandmarkPage />} />
+                <Route path="/provinces" element={<div className="p-20 text-center text-2xl font-bold">Danh sách tất cả tỉnh (Coming soon)</div>} />
+              </Route>
 
-    if (loading) return <div>Đang tải dữ liệu...</div>;
-    if (error) return <div>Lỗi: {error}</div>;
-
-    return (
-        <div style={{ padding: '20px' }}>
-            <h1>LingoVoyage - Khám phá Việt Nam</h1>
-            
-            <h2>Danh sách tỉnh thành</h2>
-            
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px' }}>
-                {provinces.map((province) => (
-                    <div 
-                        key={province._id}
-                        style={{
-                            border: '1px solid #ddd',
-                            borderRadius: '8px',
-                            padding: '15px',
-                            textAlign: 'center'
-                        }}
-                    >
-                        <h3>{province.name}</h3>
-                        <p>Mã: {province.code}</p>
-                    </div>
-                ))}
-            </div>
-        </div>
-    );
+            </Routes>
+          </ToastProvider>
+        </AuthProvider>
+      </LanguageProvider>
+    </BrowserRouter>
+  );
 }
 
 export default App;
