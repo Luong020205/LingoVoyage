@@ -4,25 +4,147 @@ import Breadcrumb from '../components/common/Breadcrumb';
 import ImageCarousel from '../components/landmark/ImageCarousel';
 import WordPopup from '../components/landmark/WordPopup';
 import LoadingSpinner from '../components/common/LoadingSpinner';
-import { fetchLandmarkBySlug } from '../utils/api';
+import { fetchLandmarkBySlug, fetchProvinceBySlug } from '../utils/api';
 import { useLanguage } from '../context/LanguageContext';
+
+/**
+ * Hàm render đoạn mô tả với các từ vựng được gạch chân và hỗ trợ dịch thuật.
+ */
+function HighlightedDescription({ description, vocabularies, onWordClick }) {
+  const { learningLang, tLearning } = useLanguage();
+  const [translatedParts, setTranslatedParts] = useState([]);
+  const [parts, setParts] = useState([]);
+  const [highlights, setHighlights] = useState([]);
+
+  useEffect(() => {
+    if (!description) return;
+    
+    let activeHighlights = [];
+    if (vocabularies?.length) {
+      activeHighlights = vocabularies
+        .filter(v => v.highlightText && v.highlightText.trim())
+        .map(v => ({ text: v.highlightText.trim(), vocab: v }));
+      
+      activeHighlights.sort((a, b) => b.text.length - a.text.length);
+    }
+
+    setHighlights(activeHighlights);
+
+    if (activeHighlights.length === 0) {
+      setParts([description]);
+    } else {
+      const pattern = activeHighlights.map(h => h.text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');
+      const regex = new RegExp(`(${pattern})`, 'gi');
+      setParts(description.split(regex));
+    }
+  }, [description, vocabularies]);
+
+  useEffect(() => {
+    let isMounted = true;
+    const translateAll = async () => {
+      if (learningLang === 'vi') {
+        if (isMounted) setTranslatedParts(parts);
+        return;
+      }
+      
+      const result = await Promise.all(parts.map(async (part) => {
+        if (!part || !part.trim()) return part;
+        return await tLearning(part);
+      }));
+      
+      if (isMounted) setTranslatedParts(result);
+    };
+
+    if (parts.length > 0) {
+      translateAll();
+    }
+    
+    return () => { isMounted = false; };
+  }, [parts, learningLang, tLearning]);
+
+  if (!description) return null;
+
+  return (
+    <p>
+      {translatedParts.map((tPart, idx) => {
+        const originalPart = parts[idx];
+        const matched = highlights.find(h => h.text.toLowerCase() === originalPart.toLowerCase());
+        if (matched) {
+          return (
+            <span
+              key={idx}
+              onClick={() => onWordClick(matched.vocab)}
+              className="text-primary font-semibold underline decoration-primary/40 decoration-2 underline-offset-2 cursor-pointer hover:bg-primary/10 hover:decoration-primary px-0.5 rounded transition-all"
+            >
+              {tPart}
+            </span>
+          );
+        }
+        return <span key={idx}>{tPart}</span>;
+      })}
+    </p>
+  );
+}
 
 export default function LandmarkPage() {
   const { provinceSlug, landmarkSlug } = useParams();
-  const { currentLang, languages } = useLanguage();
+  const { systemLang, learningLang, languages, tSystem, tLearning, switchLearningLanguage } = useLanguage();
   
   const [landmark, setLandmark] = useState(null);
+  const [province, setProvince] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [selectedWord, setSelectedWord] = useState(null);
+  const [translatedDescText, setTranslatedDescText] = useState('');
+
+  const [labels, setLabels] = useState({
+    home: 'Trang chủ',
+    loading: 'Đang tải thông tin địa danh...',
+    notFound: 'Không tìm thấy địa danh',
+    listen: 'Nghe đọc',
+    save: 'Lưu sổ tay',
+    language: 'Ngôn ngữ',
+    intro: 'Giới thiệu',
+    moreInfo: 'Thông tin thêm',
+    address: 'Địa chỉ',
+    openHours: 'Giờ mở cửa',
+    ticketPrice: 'Giá vé',
+    notUpdated: 'Chưa cập nhật'
+  });
+
+  useEffect(() => {
+    let isMounted = true;
+    const translateLabels = async () => {
+      const newLabels = {
+        home: await tSystem('Trang chủ'),
+        loading: await tSystem('Đang tải thông tin địa danh...'),
+        notFound: await tSystem('Không tìm thấy địa danh'),
+        listen: await tSystem('Nghe đọc'),
+        save: await tSystem('Lưu sổ tay'),
+        language: await tSystem('Ngôn ngữ'),
+        intro: await tSystem('Giới thiệu'),
+        moreInfo: await tSystem('Thông tin thêm'),
+        address: await tSystem('Địa chỉ'),
+        openHours: await tSystem('Giờ mở cửa'),
+        ticketPrice: await tSystem('Giá vé'),
+        notUpdated: await tSystem('Chưa cập nhật')
+      };
+      if (isMounted) setLabels(newLabels);
+    };
+    translateLabels();
+    return () => { isMounted = false; };
+  }, [systemLang, tSystem]);
 
   useEffect(() => {
     const loadData = async () => {
       try {
         setLoading(true);
-        // FIXME: API call might wait for BE implementation
-        const data = await fetchLandmarkBySlug(provinceSlug, landmarkSlug);
-        setLandmark(data);
+        const [landmarkData, provinceData] = await Promise.all([
+          fetchLandmarkBySlug(provinceSlug, landmarkSlug),
+          fetchProvinceBySlug(provinceSlug).catch(() => null)
+        ]);
+        setLandmark(landmarkData);
+        setProvince(provinceData);
       } catch (err) {
         setError(err.message);
       } finally {
@@ -32,147 +154,104 @@ export default function LandmarkPage() {
     loadData();
   }, [provinceSlug, landmarkSlug]);
 
-  // Mock data for UI presentation if API fails
-  const data = landmark || {
-    name: 'Văn Miếu - Quốc Tử Giám',
-    description: 'Văn Miếu - Quốc Tử Giám là quần thể di tích đa dạng và phong phú hàng đầu của thành phố Hà Nội, nằm ở phía Nam kinh thành Thăng Long. Đây là trường đại học đầu tiên của Việt Nam và là nơi thờ Khổng Tử - người sáng lập Nho giáo.',
-    images: [
-      'https://images.unsplash.com/photo-1595166297072-04b3be9fc415?q=80&w=2070',
-      'https://images.unsplash.com/photo-1559592413-7cec4d0cae2b?q=80&w=2128'
-    ],
-    rating: 4.8,
-    reviewsCount: 1234,
-    views: 2500,
-    address: 'Số 58 Phố Quốc Tử Giám, Quận Đống Đa, Hà Nội',
-    openHours: '08:00 - 17:00 (Thứ 2 - Chủ nhật)',
-    ticketPrice: '30.000 VND (người lớn)',
-    vocabularies: [
-      { word: 'temple', meaning: 'đền, miếu', pronunciation: 'templ', example: 'The Temple of Literature...', type: 'danh từ', difficulty: 'Dễ', language: 'English' },
-      { word: 'scholar', meaning: 'học giả', pronunciation: 'skɒl.ər', example: 'Many scholars studied here.', type: 'danh từ', difficulty: 'Trung bình', language: 'English' }
-    ]
+  useEffect(() => {
+    if (landmark?.description) {
+      const getTranslation = async () => {
+        const text = await tLearning(landmark.description);
+        setTranslatedDescText(text);
+      };
+      getTranslation();
+    }
+  }, [landmark?.description, learningLang, tLearning]);
+
+  const handleSpeak = () => {
+    if (!translatedDescText) return;
+    const utterance = new SpeechSynthesisUtterance(translatedDescText);
+    if (learningLang === 'en') utterance.lang = 'en-US';
+    else if (learningLang === 'zh') utterance.lang = 'zh-CN';
+    else if (learningLang === 'ko') utterance.lang = 'ko-KR';
+    else utterance.lang = 'vi-VN';
+    window.speechSynthesis.speak(utterance);
   };
 
-  if (loading) return <LoadingSpinner message="Đang tải thông tin địa danh..." />;
+  if (loading) return <LoadingSpinner message={labels.loading} />;
+  if (error) return <div className="text-center py-20 text-danger">{error}</div>;
+  if (!landmark) return <div className="text-center py-20">{labels.notFound}</div>;
+
+  const data = landmark;
 
   return (
     <div className="container mx-auto px-4 py-8 max-w-5xl">
       <Breadcrumb items={[
-        { label: 'Trang chủ', link: '/' },
-        { label: provinceSlug, link: `/province/${provinceSlug}` },
+        { label: labels.home, link: '/' },
+        { label: province?.name || provinceSlug, link: `/province/${provinceSlug}` },
         { label: data.name }
       ]} />
 
       <ImageCarousel images={data.images} />
 
-      {/* Info Bar */}
-      <div className="flex flex-wrap items-center gap-4 my-6 bg-white p-4 rounded-2xl shadow-sm border border-gray-100 text-sm md:text-base">
-         <div className="flex items-center gap-2 font-medium">
-           <span className="text-warning">⭐</span> {data.rating} <span className="text-gray-500">({data.reviewsCount} đánh giá)</span>
-         </div>
-         <span className="text-gray-300">|</span>
-         <div className="flex items-center gap-2 font-medium">
-           <span className="text-orange-500">🔥</span> {(data.views/1000).toFixed(1)}k lượt xem
-         </div>
-         <span className="text-gray-300">|</span>
-         <div className="text-gray-500 flex items-center gap-2">
-            <span>🕒</span> Cập nhật: 2/2026
-         </div>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+      <div className="space-y-8 mt-6">
         
         {/* Main Content */}
-        <div className="lg:col-span-2 space-y-8">
-          <div className="bg-white p-6 md:p-8 rounded-2xl shadow-sm border border-gray-100">
-             
-             <div className="flex items-start justify-between mb-6">
-                <h1 className="text-3xl font-heading font-bold text-gray-800">{data.name}</h1>
-                <div className="flex gap-2">
-                   <button className="w-10 h-10 rounded-full bg-gray-50 flex items-center justify-center text-xl hover:bg-primary/10 hover:text-primary transition-colors tooltip" title="Nghe đọc">🔊</button>
-                   <button className="w-10 h-10 rounded-full bg-gray-50 flex items-center justify-center text-xl hover:bg-info/10 hover:text-info transition-colors tooltip" title="Lưu sổ tay">🔖</button>
-                </div>
-             </div>
-
-             {/* Language selector for this landmark */}
-             <div className="flex items-center gap-2 mb-6 p-2 bg-gray-50 rounded-xl overflow-x-auto hide-scrollbar">
-                <span className="text-sm font-medium text-gray-500 pl-2">🌐 Ngôn ngữ:</span>
-                <div className="flex gap-2">
-                   {languages.map(lang => (
-                      <button 
-                        key={lang.code}
-                        className={`px-3 py-1.5 rounded-lg text-sm transition-colors border ${currentLang === lang.code ? 'bg-white border-gray-200 shadow-sm font-medium text-primary' : 'border-transparent text-gray-600 hover:bg-gray-100'}`}
-                      >
-                         {lang.flag} {lang.name}
-                      </button>
-                   ))}
-                </div>
-             </div>
-
-             <div className="prose max-w-none text-gray-600 leading-relaxed text-justify relative">
-                <h3 className="flex items-center gap-2 text-lg font-heading font-bold text-gray-800 border-b border-gray-100 pb-2 mb-4">
-                  <span>📝</span> Mô tả
-                </h3>
-                <p>{data.description}</p>
-             </div>
-
-             {/* Vocabulary Chips */}
-             <div className="mt-8 pt-8 border-t border-gray-100">
-                <h3 className="text-gray-800 font-heading font-bold mb-4 flex items-center gap-2">
-                  <span>💡</span> Từ vựng nổi bật
-                </h3>
-                <div className="flex flex-wrap gap-3">
-                  {data.vocabularies?.map((vocab, idx) => (
-                    <button 
-                      key={idx}
-                      onClick={() => setSelectedWord(vocab)}
-                      className="px-4 py-2 bg-primary/5 border border-primary/20 text-primary-dark rounded-xl hover:bg-primary hover:text-white transition-all font-medium text-sm flex flex-col items-start shadow-sm"
-                    >
-                       <span className="font-bold">{vocab.word}</span>
-                       <span className="text-xs opacity-80">({vocab.meaning})</span>
-                    </button>
-                  ))}
-                </div>
-             </div>
-
-          </div>
-        </div>
-
-        {/* Sidebar */}
-        <div className="lg:col-span-1 space-y-6">
-           <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
-              <h3 className="font-heading font-bold text-lg text-gray-800 mb-4 border-b border-gray-100 pb-2 flex items-center gap-2">
-                <span>📍</span> Thông tin thêm
-              </h3>
-              <ul className="space-y-4 text-sm">
-                 <li className="flex gap-3">
-                    <span className="text-gray-400 text-lg">📍</span>
-                    <div>
-                      <strong className="block text-gray-800 mb-1">Địa chỉ</strong>
-                      <span className="text-gray-600">{data.address}</span>
-                    </div>
-                 </li>
-                 <li className="flex gap-3">
-                    <span className="text-gray-400 text-lg">🕒</span>
-                    <div>
-                      <strong className="block text-gray-800 mb-1">Giờ mở cửa</strong>
-                      <span className="text-gray-600">{data.openHours}</span>
-                    </div>
-                 </li>
-                 <li className="flex gap-3">
-                    <span className="text-gray-400 text-lg">🎫</span>
-                    <div>
-                      <strong className="block text-gray-800 mb-1">Giá vé</strong>
-                      <span className="text-gray-600">{data.ticketPrice}</span>
-                    </div>
-                 </li>
-              </ul>
-
-              <div className="mt-6 pt-6 border-t border-gray-100">
-                 <button className="w-full py-3 bg-gray-50 border border-gray-200 text-gray-700 font-medium rounded-xl hover:bg-gray-100 transition-colors flex items-center justify-center gap-2">
-                   <span>🗺️</span> Xem bản đồ
-                 </button>
+        <div className="bg-white p-6 md:p-8 rounded-2xl shadow-sm border border-gray-100">
+           
+           <div className="flex items-start justify-between mb-6">
+              <h1 className="text-3xl font-heading font-bold text-gray-800">{data.name}</h1>
+              <div className="flex gap-2">
+                 <button onClick={handleSpeak} className="w-10 h-10 rounded-full bg-gray-50 flex items-center justify-center text-xl hover:bg-primary/10 hover:text-primary transition-colors" title={labels.listen}>🔊</button>
+                 <button className="w-10 h-10 rounded-full bg-gray-50 flex items-center justify-center text-xl hover:bg-info/10 hover:text-info transition-colors" title={labels.save}>🔖</button>
               </div>
            </div>
+
+           {/* Language selector */}
+           <div className="flex items-center gap-2 mb-6 p-2 bg-gray-50 rounded-xl overflow-x-auto">
+              <span className="text-sm font-medium text-gray-500 pl-2">🌐 {labels.language}:</span>
+              <div className="flex gap-2">
+                 {languages.map(lang => (
+                    <button 
+                      key={lang.code}
+                      onClick={() => switchLearningLanguage(lang.code)}
+                      className={`px-3 py-1.5 rounded-lg text-sm transition-colors border ${learningLang === lang.code ? 'bg-white border-gray-200 shadow-sm font-medium text-primary' : 'border-transparent text-gray-600 hover:bg-gray-100'}`}
+                    >
+                       {lang.flag} {lang.name}
+                    </button>
+                 ))}
+              </div>
+           </div>
+
+           {/* Description with highlighted vocabulary */}
+           <div className="prose max-w-none text-gray-600 leading-relaxed text-justify relative">
+              <h3 className="flex items-center gap-2 text-lg font-heading font-bold text-gray-800 border-b border-gray-100 pb-2 mb-4">
+                <span>📝</span> {labels.intro}
+              </h3>
+              <HighlightedDescription 
+                description={data.description} 
+                vocabularies={data.vocabularies}
+                onWordClick={setSelectedWord}
+              />
+           </div>
+
+        </div>
+
+        {/* Info (Moved to bottom) */}
+        <div className="bg-white p-6 md:p-8 rounded-2xl shadow-sm border border-gray-100">
+          <h3 className="font-heading font-bold text-lg text-gray-800 mb-4 border-b border-gray-100 pb-2 flex items-center gap-2">
+            <span>📍</span> {labels.moreInfo}
+          </h3>
+          <ul className="space-y-4 text-sm">
+             <li className="flex gap-3">
+                <span className="text-gray-400 text-lg">📍</span>
+                <div><strong className="block text-gray-800 mb-1">{labels.address}</strong><span className="text-gray-600">{data.address || labels.notUpdated}</span></div>
+             </li>
+             <li className="flex gap-3">
+                <span className="text-gray-400 text-lg">🕒</span>
+                <div><strong className="block text-gray-800 mb-1">{labels.openHours}</strong><span className="text-gray-600">{data.openHours || labels.notUpdated}</span></div>
+             </li>
+             <li className="flex gap-3">
+                <span className="text-gray-400 text-lg">🎫</span>
+                <div><strong className="block text-gray-800 mb-1">{labels.ticketPrice}</strong><span className="text-gray-600">{data.ticketPrice || labels.notUpdated}</span></div>
+             </li>
+          </ul>
         </div>
 
       </div>

@@ -1,6 +1,6 @@
 import HeroSection from '../components/home/HeroSection';
-import ProvinceList from '../components/home/ProvinceList';
 import FeatureSection from '../components/home/FeatureSection';
+import ProvinceList from '../components/home/ProvinceList';
 
 export default function HomePage() {
   return (

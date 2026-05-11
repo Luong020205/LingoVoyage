@@ -1,7 +1,9 @@
 const API_BASE = 'http://localhost:5000/api';
 
-export async function fetchProvinces() {
-  const res = await fetch(`${API_BASE}/provinces`);
+export async function fetchProvinces(params = {}) {
+  const { page = 1, limit = 0, search = '' } = params;
+  const query = new URLSearchParams({ page, limit, search }).toString();
+  const res = await fetch(`${API_BASE}/provinces?${query}`);
   if (!res.ok) throw new Error('Không thể tải danh sách tỉnh thành');
   return res.json();
 }
@@ -12,8 +14,10 @@ export async function fetchProvinceBySlug(slug) {
   return res.json();
 }
 
-export async function fetchLandmarks(provinceSlug) {
-  const res = await fetch(`${API_BASE}/provinces/${provinceSlug}/landmarks`);
+export async function fetchLandmarks(provinceSlug, params = {}) {
+  const { page = 1, limit = 8, search = '', category = '', sort = 'newest' } = params;
+  const query = new URLSearchParams({ page, limit, search, category, sort }).toString();
+  const res = await fetch(`${API_BASE}/provinces/${provinceSlug}/landmarks?${query}`);
   if (!res.ok) throw new Error('Không thể tải danh sách địa danh');
   return res.json();
 }

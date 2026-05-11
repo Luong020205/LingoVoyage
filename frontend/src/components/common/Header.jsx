@@ -4,14 +4,38 @@ import { useAuth } from '../../context/AuthContext';
 import { useState, useEffect } from 'react';
 
 export default function Header() {
-  const { currentLang, switchLanguage, languages } = useLanguage();
+  const { systemLang, switchSystemLanguage, languages, tSystem } = useLanguage();
   const { user, logout } = useAuth();
   const [isScrolled, setIsScrolled] = useState(false);
   const [langOpen, setLangOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   
+  const [labels, setLabels] = useState({
+    notebook: 'Sổ tay',
+    learning: 'Học tập',
+    logout: 'Đăng xuất',
+    login: 'Đăng nhập',
+    register: 'Đăng ký'
+  });
+
   const location = useLocation();
   const isHomePage = location.pathname === '/';
+
+  useEffect(() => {
+    let isMounted = true;
+    const translateLabels = async () => {
+      const newLabels = {
+        notebook: await tSystem('Sổ tay'),
+        learning: await tSystem('Học tập'),
+        logout: await tSystem('Đăng xuất'),
+        login: await tSystem('Đăng nhập'),
+        register: await tSystem('Đăng ký')
+      };
+      if (isMounted) setLabels(newLabels);
+    };
+    translateLabels();
+    return () => { isMounted = false; };
+  }, [systemLang, tSystem]);
 
   useEffect(() => {
     const handleScroll = () => {
@@ -31,20 +55,8 @@ export default function Header() {
           LingoVoyage
         </Link>
 
-        {/* Search Bar - Hidden on HomePage because HeroSection already has one */}
-        {!isHomePage && (
-          <div className="hidden md:flex flex-1 max-w-md mx-8 relative animate-fade-in">
-            <input 
-              type="text" 
-              placeholder="Tìm kiếm địa danh, tỉnh thành..." 
-              className="w-full pl-10 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-full focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary text-sm"
-            />
-            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">🔍</span>
-          </div>
-        )}
-
-        {/* Actions - Added flex-1 on the right if search bar is hidden to keep logo centered? No, flex justify-between handles spacing. */}
-        <div className={`flex items-center gap-4 ${isHomePage ? 'ml-auto' : ''}`}>
+        {/* Actions */}
+        <div className="flex items-center gap-4 ml-auto">
           
           {/* Language Selector */}
           <div className="relative">
@@ -52,15 +64,15 @@ export default function Header() {
               onClick={() => setLangOpen(!langOpen)}
               className="flex items-center gap-1 hover:text-primary transition-colors text-sm font-medium"
             >
-              <span>🌐</span> {languages.find(l => l.code === currentLang)?.name} <span>▼</span>
+              <span>🌐</span> {languages.find(l => l.code === systemLang)?.name} <span>▼</span>
             </button>
             {langOpen && (
               <div className="absolute right-0 mt-2 w-40 bg-white border border-gray-100 rounded-xl shadow-lg py-2">
                 {languages.map(lang => (
                   <button
                     key={lang.code}
-                    onClick={() => { switchLanguage(lang.code); setLangOpen(false); }}
-                    className={`w-full text-left px-4 py-2 text-sm hover:bg-gray-50 flex items-center gap-2 ${currentLang === lang.code ? 'text-primary font-medium' : 'text-gray-700'}`}
+                    onClick={() => { switchSystemLanguage(lang.code); setLangOpen(false); }}
+                    className={`w-full text-left px-4 py-2 text-sm hover:bg-gray-50 flex items-center gap-2 ${systemLang === lang.code ? 'text-primary font-medium' : 'text-gray-700'}`}
                   >
                     <span>{lang.flag}</span> {lang.name}
                   </button>
@@ -80,14 +92,14 @@ export default function Header() {
                </button>
                {userMenuOpen && (
                  <div className="absolute right-0 mt-2 w-48 bg-white border border-gray-100 rounded-xl shadow-lg py-2 z-50">
-                    <Link to="/user/notebook" onClick={() => setUserMenuOpen(false)} className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">📚 Sổ tay</Link>
-                    <Link to="/user/learning" onClick={() => setUserMenuOpen(false)} className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">🎮 Học tập</Link>
+                    <Link to="/user/notebook" onClick={() => setUserMenuOpen(false)} className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">📚 {labels.notebook}</Link>
+                    <Link to="/user/learning" onClick={() => setUserMenuOpen(false)} className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">🎮 {labels.learning}</Link>
                     <div className="border-t border-gray-100 my-1"></div>
                     <button 
                       onClick={() => { logout(); setUserMenuOpen(false); }} 
                       className="w-full text-left px-4 py-2 text-sm text-danger hover:bg-red-50"
                     >
-                      Đăng xuất
+                      {labels.logout}
                     </button>
                  </div>
                )}
@@ -95,10 +107,10 @@ export default function Header() {
           ) : (
             <div className="flex items-center gap-2">
               <Link to="/login" className="flex items-center gap-2 px-4 py-2 text-primary border border-primary rounded-lg hover:bg-primary/5 transition-colors text-sm font-medium">
-                <span>👤</span> Đăng nhập
+                <span>👤</span> {labels.login}
               </Link>
               <Link to="/register" className="hidden sm:block px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-dark transition-colors text-sm font-medium">
-                Đăng ký
+                {labels.register}
               </Link>
             </div>
           )}
