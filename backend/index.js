@@ -95,8 +95,6 @@ const landmarkSchema = new mongoose.Schema({
     phone: { type: String, default: '' },
     website: { type: String, default: '' },
 
-    rating: { type: Number, default: 4.5 },
-    reviewsCount: { type: Number, default: 0 },
     views: { type: Number, default: 0 },
     status: { type: String, enum: ['active', 'inactive'], default: 'active' },
 }, { timestamps: true });
@@ -287,7 +285,7 @@ async function checkAndResetWeeklyXP(user) {
         }
 
         const updatedUser = await User.findByIdAndUpdate(user._id, update, { new: true });
-        
+
         // Cập nhật lại object để dùng tiếp trong request
         if (updatedUser) {
             user.weeklyXP = updatedUser.weeklyXP;
@@ -697,7 +695,7 @@ app.get('/api/provinces/:slug/landmarks', async (req, res) => {
             findQuery = findQuery.skip((pageNum - 1) * limitNum).limit(limitNum);
         }
 
-        const landmarks = await findQuery;
+        const landmarks = await findQuery.lean();
 
         console.log(`🔍 Found ${landmarks.length}/${total} landmarks for province: ${req.params.slug} (Page: ${pageNum}, Limit: ${limitNum})`);
 
@@ -733,7 +731,7 @@ app.get('/api/provinces/:provinceSlug/landmarks/:landmarkSlug', async (req, res)
                 { landmarkId: landmark._id },
                 { landmarkSlug: landmark.slug }
             ]
-        });
+        }).lean();
 
         // Chuyển sang plain object để gán thêm thuộc tính
         const landmarkObj = landmark.toObject();
@@ -831,12 +829,113 @@ app.delete('/api/landmarks/:id', async (req, res) => {
     }
 });
 
-// Lấy tất cả địa danh (cho admin)
+// Lấy tất cả địa danh (cho admin) - kèm vocabCount
 app.get('/api/landmarks', async (req, res) => {
     try {
-        const landmarks = await Landmark.find().sort({ createdAt: -1 });
+        const landmarks = await Landmark.find().sort({ createdAt: -1 }).lean();
+        for (let lm of landmarks) {
+            lm.vocabCount = await Vocabulary.countDocuments({ landmarkId: lm._id });
+        }
         res.json(landmarks);
     } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+});
+
+// ==========================================
+// API - VOCABULARY CRUD (Từ vựng)
+// ==========================================
+
+// Lấy từ vựng theo landmarkId
+app.get('/api/landmarks/:id/vocabularies', async (req, res) => {
+    try {
+        const vocabs = await Vocabulary.find({ landmarkId: req.params.id }).sort({ createdAt: 1 }).lean();
+        res.json(vocabs);
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+});
+
+// Thêm từ vựng cho 1 địa danh
+app.post('/api/landmarks/:id/vocabularies', async (req, res) => {
+    try {
+        const landmark = await Landmark.findById(req.params.id);
+        if (!landmark) return res.status(404).json({ message: 'Không tìm thấy địa danh' });
+
+        const vocab = new Vocabulary({
+            ...req.body,
+            landmarkId: landmark._id,
+            landmarkSlug: landmark.slug,
+            provinceSlug: landmark.provinceSlug,
+        });
+        const saved = await vocab.save();
+        console.log(`✅ Added vocab "${saved.word}" to ${landmark.name}`);
+        res.status(201).json(saved);
+    } catch (error) {
+        res.status(400).json({ message: error.message });
+    }
+});
+
+// Cập nhật từ vựng
+app.put('/api/vocabularies/:id', async (req, res) => {
+    try {
+        const vocab = await Vocabulary.findByIdAndUpdate(req.params.id, req.body, { new: true, runValidators: true });
+        if (!vocab) return res.status(404).json({ message: 'Không tìm thấy từ vựng' });
+        res.json(vocab);
+    } catch (error) {
+        res.status(400).json({ message: error.message });
+    }
+});
+
+// Xóa từ vựng
+app.delete('/api/vocabularies/:id', async (req, res) => {
+    try {
+        const vocab = await Vocabulary.findByIdAndDelete(req.params.id);
+        if (!vocab) return res.status(404).json({ message: 'Không tìm thấy từ vựng' });
+        // Xóa luôn các bản ghi UserVocab liên quan
+        await UserVocab.deleteMany({ vocabId: vocab._id });
+        console.log(`🗑️ Deleted vocab: ${vocab.word}`);
+        res.json({ message: 'Đã xóa từ vựng' });
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+});
+
+// ==========================================
+// API - ADMIN STATS (Thống kê)
+// ==========================================
+app.get('/api/admin/stats', async (req, res) => {
+    try {
+        const [provinceCount, landmarkCount, vocabCount, userCount, landmarks, recentUsers, provinces] = await Promise.all([
+            Province.countDocuments(),
+            Landmark.countDocuments(),
+            Vocabulary.countDocuments(),
+            User.countDocuments(),
+            Landmark.find().sort({ views: -1 }).limit(5).lean(),
+            User.find().sort({ createdAt: -1 }).limit(5).select('name username email avatar createdAt xp streak isOnline').lean(),
+            Province.find().select('name slug region landmarkCount vocabCount').sort({ landmarkCount: -1 }).limit(5).lean(),
+        ]);
+
+        const totalViews = await Landmark.aggregate([{ $group: { _id: null, total: { $sum: '$views' } } }]);
+        const todayStart = new Date(); todayStart.setHours(0,0,0,0);
+        const newUsersToday = await User.countDocuments({ createdAt: { $gte: todayStart } });
+        const weekStart = new Date(); weekStart.setDate(weekStart.getDate() - 7);
+        const newUsersThisWeek = await User.countDocuments({ createdAt: { $gte: weekStart } });
+
+        // Top provinces by landmarks
+        for (let p of provinces) {
+            p.vocabCount = await Vocabulary.countDocuments({ provinceSlug: p.slug });
+        }
+
+        res.json({
+            counts: { provinces: provinceCount, landmarks: landmarkCount, vocabs: vocabCount, users: userCount, views: totalViews[0]?.total || 0 },
+            newUsers: { today: newUsersToday, thisWeek: newUsersThisWeek },
+            topLandmarks: landmarks.map(l => ({ name: l.name, slug: l.slug, views: l.views || 0, provinceSlug: l.provinceSlug, image: l.images?.[0] })),
+            recentUsers,
+            topProvinces: provinces,
+        });
+    } catch (error) {
+        console.error('❌ Admin stats error:', error);
         res.status(500).json({ message: error.message });
     }
 });
@@ -848,7 +947,7 @@ app.get('/api/landmarks', async (req, res) => {
 // ĐĂNG KÝ
 app.post('/api/auth/register', async (req, res) => {
     try {
-        const { name, username, email, password, confirmPassword, nativeLanguage, learningLanguages } = req.body;
+        const { name, username, email, password, confirmPassword, nativeLanguage, learningLanguage } = req.body;
 
         // Validate required fields
         if (!name || !username || !email || !password) {
@@ -908,7 +1007,7 @@ app.post('/api/auth/register', async (req, res) => {
             email: email.toLowerCase().trim(),
             password,
             uiLanguage: req.body.uiLanguage || nativeLanguage || 'vi',
-            learningLanguage: req.body.learningLanguage || (learningLanguages && learningLanguages[0]) || 'en',
+            learningLanguage: req.body.learningLanguage || learningLanguage || 'en',
         });
         await user.save();
 
@@ -931,6 +1030,8 @@ app.post('/api/auth/register', async (req, res) => {
                 streak: user.streak,
                 level: user.level,
                 badges: user.badges,
+                uiLanguage: user.uiLanguage,
+                learningLanguage: user.learningLanguage,
             },
         });
     } catch (error) {
@@ -1147,7 +1248,7 @@ app.get('/api/auth/check-username/:username', async (req, res) => {
 // ==========================================
 app.get('/api/users', async (req, res) => {
     try {
-        const users = await User.find().sort({ createdAt: -1 });
+        const users = await User.find().sort({ createdAt: -1 }).select('-password').lean();
         res.json(users);
     } catch (error) {
         res.status(500).json({ message: error.message });
@@ -1420,7 +1521,7 @@ app.post('/api/chatbot/chat', authMiddleware, async (req, res) => {
 
         // 2. Lấy lịch sử chat gần đây (10 tin nhắn) CÙNG SESSION để AI có context
         const history = await ChatMessage.find({ userId, sessionId: currentSessionId }).sort({ createdAt: -1 }).skip(1).limit(10).lean();
-        
+
         const rawHistory = history.reverse();
         const chatHistory = [];
         for (const msg of rawHistory) {
@@ -1437,7 +1538,7 @@ app.post('/api/chatbot/chat', authMiddleware, async (req, res) => {
                 }
             }
         }
-        
+
         // Gemini BẮT BUỘC lịch sử phải bắt đầu bằng tin nhắn của 'user'
         if (chatHistory.length > 0 && chatHistory[0].role !== 'user') {
             chatHistory.shift(); // Xóa tin nhắn model đầu tiên nếu bị lẻ
@@ -1449,7 +1550,7 @@ app.post('/api/chatbot/chat', authMiddleware, async (req, res) => {
         try {
             const safeQuery = message.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
             const searchRegex = new RegExp(safeQuery, 'i');
-            
+
             foundLandmarks = await Landmark.find({
                 $or: [
                     { name: searchRegex },
@@ -1509,7 +1610,7 @@ ${extraContext}`
             }
             botResponse = JSON.stringify({ reply: fallbackMsg, suggestedSlug: null });
         }
-        
+
         let replyText = botResponse;
         let suggestedLandmark = null;
 
@@ -1552,8 +1653,8 @@ app.get('/api/chatbot/history', authMiddleware, async (req, res) => {
         if (sessionId) {
             query.sessionId = sessionId; // Chỉ lấy tin nhắn của phiên hiện tại
         }
-        
-        const history = await ChatMessage.find(query).sort({ createdAt: 1 }).limit(50);
+
+        const history = await ChatMessage.find(query).sort({ createdAt: 1 }).limit(50).lean();
         res.json(history);
     } catch (error) {
         res.status(500).json({ message: error.message });
@@ -1598,7 +1699,7 @@ async function addXP(userId, xpGained) {
     if (user.lastResetWeek !== currentWeek) {
         await checkAndResetWeeklyXP(user);
         // Sau khi reset về 0, ta thiết lập lại dữ liệu update
-        updateData = { 
+        updateData = {
             $set: { weeklyXP: finalXP, lastResetWeek: currentWeek },
             $inc: { xp: finalXP }
         };
@@ -1903,18 +2004,7 @@ app.put('/api/user/settings/password', authMiddleware, async (req, res) => {
     }
 });
 
-// [TẠM THỜI] Recovery cho luong1 - Xóa sau khi đăng nhập được
-const resetMyPassword = async () => {
-    try {
-        const u = await User.findOne({ username: 'luong1' });
-        if (u) {
-            u.password = '12345678A';
-            await u.save();
-            console.log('✅ Password for luong1 reset to 12345678A');
-        }
-    } catch (e) { }
-};
-resetMyPassword();
+
 
 // Root endpoint
 app.get('/', (req, res) => {

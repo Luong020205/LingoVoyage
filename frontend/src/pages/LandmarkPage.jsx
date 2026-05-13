@@ -220,7 +220,7 @@ export default function LandmarkPage() {
            </div>
 
            {/* Description with highlighted vocabulary */}
-           <div className="prose max-w-none text-gray-600 leading-relaxed text-justify relative">
+           <div className="prose max-w-none text-gray-600 leading-relaxed text-justify relative break-words">
               <h3 className="flex items-center gap-2 text-lg font-heading font-bold text-gray-800 border-b border-gray-100 pb-2 mb-4">
                 <span>📝</span> {labels.intro}
               </h3>

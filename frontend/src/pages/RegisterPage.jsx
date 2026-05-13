@@ -25,7 +25,7 @@ export default function RegisterPage() {
   const { systemLang, tSystem } = useLanguage();
   const [form, setForm] = useState({
     name: '', username: '', email: '', password: '', confirmPassword: '',
-    nativeLanguage: 'vi', learningLanguages: ['en'], agreeTerms: false,
+    nativeLanguage: 'vi', learningLanguage: 'en', agreeTerms: false,
   });
   const [showPwd, setShowPwd] = useState(false);
   const [showConfirmPwd, setShowConfirmPwd] = useState(false);
@@ -172,14 +172,7 @@ export default function RegisterPage() {
     setErrors(prev => ({ ...prev, [field]: '' }));
   };
 
-  const toggleLanguage = (lang) => {
-    setForm(prev => {
-      const langs = prev.learningLanguages.includes(lang)
-        ? prev.learningLanguages.filter(l => l !== lang)
-        : [...prev.learningLanguages, lang];
-      return { ...prev, learningLanguages: langs };
-    });
-  };
+
 
   // Full validation
   const validate = () => {
@@ -222,7 +215,7 @@ export default function RegisterPage() {
         password: form.password,
         confirmPassword: form.confirmPassword,
         nativeLanguage: form.nativeLanguage,
-        learningLanguages: form.learningLanguages,
+        learningLanguage: form.learningLanguage,
       });
       toast.success(texts.regSuccess);
       navigate('/user/notebook');
@@ -348,19 +341,19 @@ export default function RegisterPage() {
               className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-primary bg-white">
               <option value="vi">🇻🇳 Tiếng Việt</option>
               <option value="en">🇬🇧 English</option>
+              <option value="zh">🇨🇳 中文</option>
+              <option value="ko">🇰🇷 한국어</option>
             </select>
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1.5">{texts.wantToLearn}</label>
-            <div className="flex flex-wrap gap-2">
-              {[{ code: 'en', label: '🇬🇧 English' }, { code: 'zh', label: '🇨🇳 中文' }, { code: 'ko', label: '🇰🇷 한국어' }].map(lang => (
-                <label key={lang.code} className={`flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg border cursor-pointer transition-all ${form.learningLanguages.includes(lang.code) ? 'bg-primary/10 border-primary/30 text-primary font-medium' : 'bg-gray-50 border-gray-200 text-gray-600 hover:bg-gray-100'
-                  }`}>
-                  <input type="checkbox" className="hidden" checked={form.learningLanguages.includes(lang.code)} onChange={() => toggleLanguage(lang.code)} />
-                  {lang.label}
-                </label>
-              ))}
-            </div>
+            <select value={form.learningLanguage} onChange={e => updateField('learningLanguage', e.target.value)}
+              className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-primary bg-white">
+              <option value="vi">🇻🇳 Tiếng Việt</option>
+              <option value="en">🇬🇧 English</option>
+              <option value="zh">🇨🇳 中文</option>
+              <option value="ko">🇰🇷 한국어</option>
+            </select>
           </div>
         </div>
 

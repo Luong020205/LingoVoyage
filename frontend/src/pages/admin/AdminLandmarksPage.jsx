@@ -1,255 +1,201 @@
 import { useState, useEffect } from 'react';
+import { useToast } from '../../context/ToastContext';
+import LandmarkFormModal from '../../components/admin/LandmarkFormModal';
 
-const API_BASE = 'http://localhost:5000/api';
+const API = 'http://localhost:5000/api';
+const CAT_ICONS = {'Di tích lịch sử':'🏛️','Thắng cảnh':'🌄','Di sản văn hóa':'🎭','Di sản thiên nhiên':'🌿','Ẩm thực':'🍜','Lễ hội':'🎉'};
+
+function SkeletonCard() {
+  return (
+    <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden animate-pulse">
+      <div className="h-40 bg-gray-200" />
+      <div className="p-5 space-y-3"><div className="h-5 bg-gray-200 rounded-lg w-3/4" /><div className="h-4 bg-gray-100 rounded-lg w-1/2" /><div className="flex gap-3 mt-3"><div className="h-7 bg-gray-100 rounded-lg flex-1" /><div className="h-7 bg-gray-100 rounded-lg flex-1" /></div></div>
+    </div>
+  );
+}
+
+function DeleteModal({ landmark, onConfirm, onCancel }) {
+  if (!landmark) return null;
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={onCancel}>
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" style={{animation:'adminFadeIn .2s ease'}} />
+      <div className="relative bg-white rounded-2xl shadow-2xl max-w-md w-full p-8 text-center" onClick={e=>e.stopPropagation()} style={{animation:'adminModalIn .25s ease'}}>
+        <div className="w-16 h-16 mx-auto mb-4 bg-red-50 rounded-full flex items-center justify-center text-3xl">⚠️</div>
+        <h3 className="text-xl font-heading font-bold text-gray-800 mb-2">Xác nhận xóa</h3>
+        <p className="text-gray-500 mb-1">Bạn có chắc muốn xóa địa danh</p>
+        <p className="font-bold text-gray-800 text-lg mb-1">"{landmark.name}"?</p>
+        <p className="text-xs text-red-500 mb-6">Tất cả từ vựng thuộc địa danh này cũng sẽ bị xóa.</p>
+        <div className="flex gap-3">
+          <button onClick={onCancel} className="flex-1 px-5 py-3 bg-gray-100 text-gray-700 font-semibold rounded-xl hover:bg-gray-200 cursor-pointer">Hủy</button>
+          <button onClick={()=>onConfirm(landmark._id)} className="flex-1 px-5 py-3 bg-red-500 text-white font-semibold rounded-xl hover:bg-red-600 cursor-pointer">Xóa</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function LandmarkCard({ landmark, provinceName, index, onEdit, onDelete }) {
+  const catIcon = CAT_ICONS[landmark.category] || '📍';
+  return (
+    <div className="group bg-white rounded-2xl border border-gray-100 overflow-hidden hover:shadow-xl hover:-translate-y-1 transition-all duration-300" style={{animation:`adminFadeIn .4s ease ${index*0.04}s both`}}>
+      <div className="relative h-40 bg-gradient-to-br from-gray-100 to-gray-200 overflow-hidden">
+        {landmark.images?.[0] ? (
+          <img src={landmark.images[0]} alt={landmark.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+        ) : (
+          <div className="w-full h-full flex items-center justify-center text-5xl opacity-30">🏛️</div>
+        )}
+        <span className="absolute top-3 left-3 px-2.5 py-1 rounded-lg text-xs font-bold bg-white/90 text-gray-700 backdrop-blur-sm">{catIcon} {landmark.category}</span>
+        {landmark.status === 'inactive' && <span className="absolute top-3 right-3 px-2 py-1 rounded-lg text-xs font-bold bg-red-500 text-white">Ẩn</span>}
+        <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-end p-4">
+          <div className="flex gap-2 w-full">
+            <button onClick={()=>onEdit(landmark)} className="flex-1 px-4 py-2.5 bg-white/95 text-gray-800 rounded-xl text-sm font-bold hover:bg-white cursor-pointer backdrop-blur-sm">✏️ Sửa</button>
+            <button onClick={()=>onDelete(landmark)} className="px-4 py-2.5 bg-red-500/90 text-white rounded-xl text-sm font-bold hover:bg-red-600 cursor-pointer backdrop-blur-sm">🗑️</button>
+          </div>
+        </div>
+      </div>
+      <div className="p-5">
+        <h3 className="font-heading font-bold text-gray-800 text-base mb-1 truncate">{landmark.name}</h3>
+        <p className="text-xs text-blue-500 font-medium mb-2">📍 {provinceName}</p>
+        {landmark.description && <p className="text-xs text-gray-400 mb-3 line-clamp-2">{landmark.description}</p>}
+        <div className="flex items-center gap-3 text-xs">
+          <span className="flex items-center gap-1"><span>📖</span><span className="font-bold text-purple-600">{landmark.vocabCount||0}</span> từ</span>
+          <span className="flex items-center gap-1"><span>👁️</span><span className="font-bold text-gray-600">{(landmark.views||0).toLocaleString()}</span></span>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export default function AdminLandmarksPage() {
+  const toast = useToast();
   const [landmarks, setLandmarks] = useState([]);
   const [provinces, setProvinces] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
+  const [provinceFilter, setProvinceFilter] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState('');
   const [showForm, setShowForm] = useState(false);
-  const [editingId, setEditingId] = useState(null);
-  const [form, setForm] = useState({
-    name: '', slug: '', provinceSlug: '', description: '', images: [''], category: 'Di tích lịch sử',
-    address: '', openHours: '', ticketPrice: '', vocabularies: [],
-  });
-  const [vocabForm, setVocabForm] = useState({ word: '', meaning: '', pronunciation: '', example: '', type: 'danh từ', difficulty: 'Dễ', highlightText: '' });
+  const [editingLandmark, setEditingLandmark] = useState(null);
+  const [deletingLandmark, setDeletingLandmark] = useState(null);
 
   const loadData = async () => {
     try {
       const [lRes, pRes] = await Promise.all([
-        fetch(`${API_BASE}/landmarks`).then(r => r.json()),
-        fetch(`${API_BASE}/provinces`).then(r => r.json()),
+        fetch(`${API}/landmarks`).then(r=>r.json()),
+        fetch(`${API}/provinces`).then(r=>r.json()),
       ]);
-      setLandmarks(lRes);
-      setProvinces(pRes);
-    } catch (err) { console.error(err); }
+      setLandmarks(Array.isArray(lRes) ? lRes : []);
+      const pList = pRes.provinces || pRes || [];
+      setProvinces(Array.isArray(pList) ? pList : []);
+    } catch(err) { toast.error('Không thể tải dữ liệu'); console.error(err); }
     setLoading(false);
   };
 
   useEffect(() => { loadData(); }, []);
 
-  const autoSlug = (name) => name.toLowerCase()
-    .normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd').replace(/Đ/g, 'D')
-    .replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, '-').trim();
-
-  const resetForm = () => {
-    setForm({ name: '', slug: '', provinceSlug: '', description: '', images: [''], category: 'Di tích lịch sử', address: '', openHours: '', ticketPrice: '', vocabularies: [] });
-    setEditingId(null);
-    setShowForm(false);
-  };
-
-  const addVocab = () => {
-    if (!vocabForm.word || !vocabForm.meaning) return;
-    setForm(f => ({ ...f, vocabularies: [...f.vocabularies, { ...vocabForm }] }));
-    setVocabForm({ word: '', meaning: '', pronunciation: '', example: '', type: 'danh từ', difficulty: 'Dễ', highlightText: '' });
-  };
-
-  const removeVocab = (idx) => setForm(f => ({ ...f, vocabularies: f.vocabularies.filter((_, i) => i !== idx) }));
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    if (!form.provinceSlug) { alert('Vui lòng chọn tỉnh!'); return; }
-    try {
-      if (editingId) {
-        await fetch(`${API_BASE}/landmarks/${editingId}`, {
-          method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(form),
-        });
-      } else {
-        await fetch(`${API_BASE}/provinces/${form.provinceSlug}/landmarks`, {
-          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(form),
-        });
-      }
-      resetForm();
-      loadData();
-    } catch (err) { alert('Lỗi: ' + err.message); }
-  };
-
-  const handleEdit = (l) => {
-    setForm({
-      name: l.name, slug: l.slug, provinceSlug: l.provinceSlug, description: l.description || '',
-      images: l.images?.length ? l.images : [''], category: l.category || '', address: l.address || '',
-      openHours: l.openHours || '', ticketPrice: l.ticketPrice || '', vocabularies: l.vocabularies || [],
-    });
-    setEditingId(l._id);
-    setShowForm(true);
-  };
-
   const handleDelete = async (id) => {
-    if (!confirm('Bạn có chắc muốn xóa địa danh này?')) return;
     try {
-      await fetch(`${API_BASE}/landmarks/${id}`, { method: 'DELETE' });
+      const res = await fetch(`${API}/landmarks/${id}`, { method:'DELETE' });
+      if (!res.ok) throw new Error('Xóa thất bại');
+      toast.success('Đã xóa địa danh!');
+      setDeletingLandmark(null);
       loadData();
-    } catch (err) { alert('Lỗi: ' + err.message); }
+    } catch(err) { toast.error(err.message); }
   };
 
-  const getProvinceName = (slug) => provinces.find(p => p.slug === slug)?.name || slug;
+  const getProvName = (slug) => provinces.find(p=>p.slug===slug)?.name || slug;
 
-  if (loading) return <div className="text-center py-20 text-gray-500">Đang tải...</div>;
+  const filtered = landmarks.filter(l => {
+    const ms = !search || l.name.toLowerCase().includes(search.toLowerCase()) || l.slug.includes(search.toLowerCase());
+    const mp = !provinceFilter || l.provinceSlug === provinceFilter;
+    const mc = !categoryFilter || l.category === categoryFilter;
+    return ms && mp && mc;
+  });
+
+  const categories = [...new Set(landmarks.map(l=>l.category).filter(Boolean))];
+  const totalVocabs = landmarks.reduce((s,l) => s + (l.vocabCount||0), 0);
 
   return (
-    <div className="max-w-7xl mx-auto">
-      <div className="flex items-center justify-between mb-8">
-        <h1 className="text-3xl font-heading font-bold text-gray-800">🏛️ Quản lý Địa danh</h1>
-        <button onClick={() => { resetForm(); setShowForm(true); }} className="px-5 py-2.5 bg-primary hover:bg-primary-dark text-white font-medium rounded-xl transition-colors shadow-sm">
-          + Thêm địa danh
-        </button>
+    <>
+      <style>{`
+        @keyframes adminFadeIn { from{opacity:0;transform:translateY(12px)} to{opacity:1;transform:translateY(0)} }
+        @keyframes adminModalIn { from{opacity:0;transform:scale(.95) translateY(10px)} to{opacity:1;transform:scale(1) translateY(0)} }
+        @keyframes spin { to{transform:rotate(360deg)} }
+        .line-clamp-2{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+      `}</style>
+
+      <div className="max-w-7xl mx-auto" style={{animation:'adminFadeIn .4s ease'}}>
+        {/* Header */}
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-8">
+          <div>
+            <h1 className="text-3xl font-heading font-bold text-gray-800">🏛️ Quản lý Địa danh</h1>
+            <p className="text-gray-400 mt-1 text-sm">Quản lý địa danh và từ vựng trên hệ thống</p>
+          </div>
+          <button onClick={()=>{setEditingLandmark(null);setShowForm(true);}} className="px-6 py-3 bg-primary hover:bg-primary-dark text-white font-bold rounded-xl shadow-lg shadow-primary/20 hover:shadow-xl hover:-translate-y-0.5 cursor-pointer flex items-center gap-2 text-sm transition-all">
+            <span className="text-lg">+</span> Thêm địa danh
+          </button>
+        </div>
+
+        {/* Stats */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8">
+          {[
+            {label:'Tổng địa danh',value:landmarks.length,icon:'🏛️',color:'from-indigo-500 to-purple-500'},
+            {label:'Tổng từ vựng',value:totalVocabs,icon:'📖',color:'from-purple-500 to-pink-500'},
+            {label:'Tổng lượt xem',value:landmarks.reduce((s,l)=>s+(l.views||0),0).toLocaleString(),icon:'👁️',color:'from-blue-500 to-cyan-500'},
+            {label:'Danh mục',value:categories.length,icon:'📂',color:'from-amber-500 to-orange-500'},
+          ].map((s,i)=>(
+            <div key={i} className="relative overflow-hidden bg-white rounded-2xl border border-gray-100 p-5 hover:shadow-lg transition-all" style={{animation:`adminFadeIn .4s ease ${i*0.08}s both`}}>
+              <div className={`absolute -top-4 -right-4 w-16 h-16 rounded-full bg-gradient-to-br ${s.color} opacity-10`} />
+              <div className="text-2xl mb-2">{s.icon}</div>
+              <div className="text-2xl font-bold text-gray-800">{s.value}</div>
+              <div className="text-xs text-gray-400 font-medium mt-0.5">{s.label}</div>
+            </div>
+          ))}
+        </div>
+
+        {/* Filters */}
+        <div className="flex flex-col sm:flex-row gap-3 mb-6">
+          <div className="relative flex-1">
+            <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400">🔍</span>
+            <input type="text" value={search} onChange={e=>setSearch(e.target.value)} className="w-full pl-11 pr-10 py-3 bg-white border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary text-sm" placeholder="Tìm kiếm địa danh..." />
+            {search && <button onClick={()=>setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 w-6 h-6 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-gray-400 text-xs cursor-pointer">✕</button>}
+          </div>
+          <select value={provinceFilter} onChange={e=>setProvinceFilter(e.target.value)} className="px-4 py-3 bg-white border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/30 text-sm cursor-pointer min-w-[160px]">
+            <option value="">Tất cả tỉnh</option>
+            {provinces.map(p=><option key={p.slug} value={p.slug}>{p.name}</option>)}
+          </select>
+          <select value={categoryFilter} onChange={e=>setCategoryFilter(e.target.value)} className="px-4 py-3 bg-white border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/30 text-sm cursor-pointer min-w-[160px]">
+            <option value="">Tất cả danh mục</option>
+            {categories.map(c=><option key={c} value={c}>{CAT_ICONS[c]||'📍'} {c}</option>)}
+          </select>
+        </div>
+
+        {/* Count */}
+        <p className="text-sm text-gray-400 mb-4">
+          Hiển thị <span className="font-bold text-gray-600">{filtered.length}</span> / {landmarks.length} địa danh
+          {(search||provinceFilter||categoryFilter) && <span className="ml-1">(đã lọc)</span>}
+        </p>
+
+        {/* Content */}
+        {loading ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
+            {Array.from({length:8}).map((_,i)=><SkeletonCard key={i} />)}
+          </div>
+        ) : filtered.length === 0 ? (
+          <div className="bg-white rounded-2xl border border-gray-100 p-16 text-center" style={{animation:'adminFadeIn .4s ease'}}>
+            <div className="text-6xl mb-4 opacity-40">{search||provinceFilter||categoryFilter ? '🔍' : '🏛️'}</div>
+            <h3 className="font-heading font-bold text-xl text-gray-700 mb-2">{search||provinceFilter||categoryFilter ? 'Không tìm thấy' : 'Chưa có địa danh'}</h3>
+            <p className="text-gray-400 mb-6">{search||provinceFilter||categoryFilter ? 'Thử thay đổi bộ lọc.' : 'Nhấn "Thêm địa danh" để bắt đầu.'}</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
+            {filtered.map((l,i) => <LandmarkCard key={l._id} landmark={l} provinceName={getProvName(l.provinceSlug)} index={i} onEdit={(lm)=>{setEditingLandmark(lm);setShowForm(true);}} onDelete={setDeletingLandmark} />)}
+          </div>
+        )}
       </div>
 
-      {/* Form */}
-      {showForm && (
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 mb-8 animate-slide-up">
-          <h3 className="font-heading font-bold text-lg text-gray-800 mb-4">
-            {editingId ? '✏️ Chỉnh sửa địa danh' : '➕ Thêm địa danh mới'}
-          </h3>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Tên địa danh *</label>
-                <input type="text" required value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value, slug: autoSlug(e.target.value) }))}
-                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:border-primary text-sm" />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Thuộc tỉnh *</label>
-                <select required value={form.provinceSlug} onChange={e => setForm(f => ({ ...f, provinceSlug: e.target.value }))}
-                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:border-primary text-sm">
-                  <option value="">Chọn tỉnh</option>
-                  {provinces.map(p => <option key={p.slug} value={p.slug}>{p.name}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Danh mục</label>
-                <select value={form.category} onChange={e => setForm(f => ({ ...f, category: e.target.value }))}
-                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:border-primary text-sm">
-                  <option>Di tích lịch sử</option><option>Thắng cảnh</option><option>Di sản văn hóa</option>
-                  <option>Di sản thiên nhiên</option><option>Ẩm thực</option><option>Lễ hội</option>
-                </select>
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Mô tả (tiếng Việt) *</label>
-              <textarea required value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} rows={4}
-                className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:border-primary text-sm resize-none" />
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Địa chỉ</label>
-                <input type="text" value={form.address} onChange={e => setForm(f => ({ ...f, address: e.target.value }))}
-                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:border-primary text-sm" />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Giờ mở cửa</label>
-                <input type="text" value={form.openHours} onChange={e => setForm(f => ({ ...f, openHours: e.target.value }))}
-                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:border-primary text-sm" />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Giá vé</label>
-                <input type="text" value={form.ticketPrice} onChange={e => setForm(f => ({ ...f, ticketPrice: e.target.value }))}
-                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:border-primary text-sm" />
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Link ảnh (mỗi dòng 1 link)</label>
-              <textarea value={form.images.join('\n')} onChange={e => setForm(f => ({ ...f, images: e.target.value.split('\n').filter(Boolean) }))} rows={2}
-                className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:border-primary text-sm resize-none font-mono" placeholder="https://..." />
-            </div>
-
-            {/* Vocabulary Section */}
-            <div className="border-t border-gray-100 pt-4">
-              <h4 className="font-heading font-bold text-gray-800 mb-3 flex items-center gap-2">
-                <span>📖</span> Từ vựng (gạch chân trong mô tả)
-              </h4>
-              
-              {form.vocabularies.length > 0 && (
-                <div className="space-y-2 mb-4">
-                  {form.vocabularies.map((v, idx) => (
-                    <div key={idx} className="flex items-center gap-3 bg-gray-50 p-3 rounded-xl text-sm">
-                      <span className="font-bold text-primary">{v.word}</span>
-                      <span className="text-gray-400">→</span>
-                      <span className="text-gray-700">{v.meaning}</span>
-                      {v.highlightText && <span className="text-xs bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded-md">gạch chân: "{v.highlightText}"</span>}
-                      <button type="button" onClick={() => removeVocab(idx)} className="ml-auto text-red-400 hover:text-red-600">✕</button>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 bg-blue-50/50 p-4 rounded-xl border border-blue-100">
-                <input type="text" placeholder="Từ tiếng Anh *" value={vocabForm.word} onChange={e => setVocabForm(v => ({ ...v, word: e.target.value }))}
-                  className="px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-primary" />
-                <input type="text" placeholder="Nghĩa tiếng Việt *" value={vocabForm.meaning} onChange={e => setVocabForm(v => ({ ...v, meaning: e.target.value }))}
-                  className="px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-primary" />
-                <input type="text" placeholder="Phiên âm" value={vocabForm.pronunciation} onChange={e => setVocabForm(v => ({ ...v, pronunciation: e.target.value }))}
-                  className="px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-primary" />
-                <input type="text" placeholder="Ví dụ" value={vocabForm.example} onChange={e => setVocabForm(v => ({ ...v, example: e.target.value }))}
-                  className="px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-primary" />
-                <input type="text" placeholder="Từ gạch chân trong mô tả" value={vocabForm.highlightText} onChange={e => setVocabForm(v => ({ ...v, highlightText: e.target.value }))}
-                  className="px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-primary md:col-span-2 bg-yellow-50" />
-                <select value={vocabForm.difficulty} onChange={e => setVocabForm(v => ({ ...v, difficulty: e.target.value }))}
-                  className="px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-primary">
-                  <option>Dễ</option><option>Trung bình</option><option>Khó</option>
-                </select>
-                <button type="button" onClick={addVocab} className="px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary-dark transition-colors">
-                  + Thêm từ
-                </button>
-              </div>
-            </div>
-
-            <div className="flex gap-3 justify-end pt-2">
-              <button type="button" onClick={resetForm} className="px-5 py-2.5 bg-gray-100 text-gray-700 font-medium rounded-xl hover:bg-gray-200 transition-colors">Hủy</button>
-              <button type="submit" className="px-5 py-2.5 bg-primary hover:bg-primary-dark text-white font-medium rounded-xl transition-colors shadow-sm">
-                {editingId ? 'Cập nhật' : 'Thêm mới'}
-              </button>
-            </div>
-          </form>
-        </div>
-      )}
-
-      {/* Table */}
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left">
-            <thead>
-              <tr className="bg-gray-50 text-gray-600 text-sm font-medium border-b border-gray-100">
-                <th className="p-4 pl-6">Địa danh</th>
-                <th className="p-4">Tỉnh</th>
-                <th className="p-4">Danh mục</th>
-                <th className="p-4 text-center">Từ vựng</th>
-                <th className="p-4 text-center">Đánh giá</th>
-                <th className="p-4 text-center">Thao tác</th>
-              </tr>
-            </thead>
-            <tbody>
-              {landmarks.map(l => (
-                <tr key={l._id} className="border-b border-gray-50 hover:bg-gray-50/50 transition-colors group">
-                  <td className="p-4 pl-6">
-                    <div className="flex items-center gap-3">
-                      {l.images?.[0] && <img src={l.images[0]} alt="" className="w-12 h-9 rounded-lg object-cover" />}
-                      <div>
-                        <div className="font-bold text-gray-800">{l.name}</div>
-                        <div className="text-xs text-gray-400 font-mono">{l.slug}</div>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="p-4 text-sm"><span className="bg-blue-50 text-blue-600 px-2 py-1 rounded-md text-xs font-medium">{getProvinceName(l.provinceSlug)}</span></td>
-                  <td className="p-4 text-sm text-gray-600">{l.category}</td>
-                  <td className="p-4 text-center font-bold text-purple-600">{l.vocabularies?.length || 0}</td>
-                  <td className="p-4 text-center text-sm">⭐ {l.rating}</td>
-                  <td className="p-4 text-center">
-                    <div className="flex items-center justify-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <button onClick={() => handleEdit(l)} className="px-3 py-1.5 bg-blue-50 text-blue-600 rounded-lg text-xs font-medium hover:bg-blue-100 transition-colors">Sửa</button>
-                      <button onClick={() => handleDelete(l._id)} className="px-3 py-1.5 bg-red-50 text-red-600 rounded-lg text-xs font-medium hover:bg-red-100 transition-colors">Xóa</button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        {landmarks.length === 0 && <div className="p-12 text-center text-gray-500">Chưa có địa danh nào.</div>}
-      </div>
-    </div>
+      <LandmarkFormModal isOpen={showForm} landmark={editingLandmark} provinces={provinces} onClose={()=>{setShowForm(false);setEditingLandmark(null);}} onSaved={loadData} />
+      <DeleteModal landmark={deletingLandmark} onConfirm={handleDelete} onCancel={()=>setDeletingLandmark(null)} />
+    </>
   );
 }

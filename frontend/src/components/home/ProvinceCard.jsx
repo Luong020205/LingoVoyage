@@ -1,8 +1,8 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useLanguage } from '../../context/LanguageContext';
 
-export default function ProvinceCard({ province }) {
+const ProvinceCard = React.memo(({ province }) => {
   const { systemLang, tSystem } = useLanguage();
   
   // Placeholder data if needed
@@ -38,6 +38,7 @@ export default function ProvinceCard({ province }) {
       <img 
         src={image} 
         alt={translatedName} 
+        loading="lazy"
         className="absolute inset-0 w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
       />
       
@@ -57,4 +58,6 @@ export default function ProvinceCard({ province }) {
       </div>
     </Link>
   );
-}
+});
+
+export default ProvinceCard;

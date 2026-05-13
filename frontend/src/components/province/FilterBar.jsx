@@ -3,22 +3,30 @@ import { useLanguage } from '../../context/LanguageContext';
 
 export default function FilterBar({ searchQuery, onSearchChange, category, onCategoryChange, sort, onSortChange }) {
   const { systemLang, tSystem } = useLanguage();
-  
+
   const [texts, setTexts] = useState({
     placeholder: 'Tìm kiếm địa danh...',
     sortLabel: 'Sắp xếp:',
     newest: 'Mới nhất',
     popular: 'Xem nhiều nhất',
     az: 'Tên A-Z',
-    categories: ['Tất cả', 'Thắng cảnh', 'Di tích lịch sử', 'Văn hóa', 'Thiên nhiên', 'Ẩm thực', 'Chùa chiền']
+    categories: ['Tất cả', 'Thắng cảnh', 'Di sản văn hóa', 'Di sản thiên nhiên', 'Di tích lịch sử']
   });
+
+  const CAT_ICONS = {
+    'Tất cả': '📍',
+    'Thắng cảnh': '🌄',
+    'Di sản văn hóa': '🎭',
+    'Di sản thiên nhiên': '🌿',
+    'Di tích lịch sử': '🏛️'
+  };
 
   useEffect(() => {
     let isMounted = true;
     const translate = async () => {
-      const baseCategories = ['Tất cả', 'Thắng cảnh', 'Di tích lịch sử', 'Văn hóa', 'Thiên nhiên', 'Ẩm thực', 'Chùa chiền'];
+      const baseCategories = ['Tất cả', 'Thắng cảnh', 'Di sản văn hóa', 'Di sản thiên nhiên', 'Di tích lịch sử'];
       const translatedCats = await Promise.all(baseCategories.map(cat => tSystem(cat)));
-      
+
       const newTexts = {
         placeholder: await tSystem('Tìm kiếm địa danh...'),
         sortLabel: await tSystem('Sắp xếp:'),
@@ -27,7 +35,7 @@ export default function FilterBar({ searchQuery, onSearchChange, category, onCat
         az: await tSystem('Tên A-Z'),
         categories: translatedCats
       };
-      
+
       if (isMounted) setTexts(newTexts);
     };
     translate();
@@ -50,16 +58,17 @@ export default function FilterBar({ searchQuery, onSearchChange, category, onCat
       </div>
 
       {/* Categories */}
-      <div className="flex flex-wrap gap-2 w-full md:w-auto overflow-x-auto pb-2 md:pb-0 hide-scrollbar">
+      <div className="flex flex-wrap gap-2 w-full md:w-auto overflow-x-auto pb-2 md:pb-0 hide-scrollbar justify-center">
         {texts.categories.map((cat) => (
           <button
             key={cat}
             onClick={() => onCategoryChange(cat)}
-            className={`px-4 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition-colors ${category === cat
-                ? 'bg-primary text-white shadow-sm shadow-primary/30'
-                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+            className={`px-4 py-2 rounded-xl text-sm font-semibold whitespace-nowrap transition-all flex items-center gap-2 ${category === cat
+              ? 'bg-primary text-white shadow-lg shadow-primary/20'
+              : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
               }`}
           >
+            <span>{CAT_ICONS[cat] || '📍'}</span>
             {cat}
           </button>
         ))}
@@ -71,7 +80,7 @@ export default function FilterBar({ searchQuery, onSearchChange, category, onCat
         <select
           value={sort}
           onChange={(e) => onSortChange(e.target.value)}
-          className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-1.5 focus:outline-none focus:border-primary"
+          className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-1.5 focus:outline-none focus:border-primary cursor-pointer"
         >
           <option value="newest">{texts.newest}</option>
           <option value="popular">{texts.popular}</option>

@@ -1,8 +1,8 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useLanguage } from '../../context/LanguageContext';
 
-export default function LandmarkCard({ landmark, provinceSlug }) {
+const LandmarkCard = React.memo(({ landmark, provinceSlug }) => {
   const { systemLang, tSystem } = useLanguage();
   
   const rawName = landmark?.name || 'Tên Địa Danh';
@@ -41,6 +41,7 @@ export default function LandmarkCard({ landmark, provinceSlug }) {
         <img
           src={image}
           alt={texts.name}
+          loading="lazy"
           className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700"
         />
 
@@ -71,4 +72,6 @@ export default function LandmarkCard({ landmark, provinceSlug }) {
       </div>
     </div>
   );
-}
+});
+
+export default LandmarkCard;
