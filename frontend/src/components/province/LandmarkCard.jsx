@@ -34,7 +34,10 @@ const LandmarkCard = React.memo(({ landmark, provinceSlug }) => {
   }, [systemLang, tSystem, rawName, rawCategory]);
 
   return (
-    <div className="bg-white rounded-[24px] overflow-hidden shadow-sm border border-gray-100 hover:shadow-2xl transition-all duration-500 flex flex-col h-full group transform hover:-translate-y-1">
+    <Link 
+      to={`/province/${provinceSlug}/${slug}`}
+      className="bg-white rounded-[24px] overflow-hidden shadow-sm border border-gray-100 hover:shadow-2xl transition-all duration-500 flex flex-col h-full group transform hover:-translate-y-1 block"
+    >
 
       {/* Image Container */}
       <div className="relative h-[220px] overflow-hidden">
@@ -63,14 +66,13 @@ const LandmarkCard = React.memo(({ landmark, provinceSlug }) => {
           </span>
         </div>
 
-        <Link
-          to={`/province/${provinceSlug}/${slug}`}
-          className="w-full block text-center bg-gray-50 hover:bg-gradient-to-r hover:from-primary hover:to-emerald-400 text-gray-700 hover:text-white font-bold py-3.5 rounded-2xl transition-all duration-300 shadow-sm hover:shadow-primary/30"
+        <div
+          className="w-full block text-center bg-gray-50 group-hover:bg-gradient-to-r group-hover:from-primary group-hover:to-emerald-400 text-gray-700 group-hover:text-white font-bold py-3.5 rounded-2xl transition-all duration-300 shadow-sm group-hover:shadow-primary/30"
         >
           {texts.discover}
-        </Link>
+        </div>
       </div>
-    </div>
+    </Link>
   );
 });
 

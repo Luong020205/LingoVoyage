@@ -136,22 +136,26 @@ export default function LandmarkPage() {
   }, [systemLang, tSystem]);
 
   useEffect(() => {
+    const controller = new AbortController();
     const loadData = async () => {
       try {
         setLoading(true);
         const [landmarkData, provinceData] = await Promise.all([
-          fetchLandmarkBySlug(provinceSlug, landmarkSlug),
-          fetchProvinceBySlug(provinceSlug).catch(() => null)
+          fetchLandmarkBySlug(provinceSlug, landmarkSlug, { signal: controller.signal }),
+          fetchProvinceBySlug(provinceSlug, { noview: true, signal: controller.signal }).catch(() => null)
         ]);
         setLandmark(landmarkData);
         setProvince(provinceData);
       } catch (err) {
-        setError(err.message);
+        if (err.name !== 'AbortError') {
+          setError(err.message);
+        }
       } finally {
         setLoading(false);
       }
     };
     loadData();
+    return () => controller.abort();
   }, [provinceSlug, landmarkSlug]);
 
   useEffect(() => {
@@ -199,7 +203,6 @@ export default function LandmarkPage() {
               <h1 className="text-3xl font-heading font-bold text-gray-800">{data.name}</h1>
               <div className="flex gap-2">
                  <button onClick={handleSpeak} className="w-10 h-10 rounded-full bg-gray-50 flex items-center justify-center text-xl hover:bg-primary/10 hover:text-primary transition-colors" title={labels.listen}>🔊</button>
-                 <button className="w-10 h-10 rounded-full bg-gray-50 flex items-center justify-center text-xl hover:bg-info/10 hover:text-info transition-colors" title={labels.save}>🔖</button>
               </div>
            </div>
 

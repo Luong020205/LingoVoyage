@@ -1,4 +1,5 @@
 // backend/index.js
+require('dotenv').config();
 
 const express = require('express');
 const cors = require('cors');
@@ -10,7 +11,11 @@ const { Server } = require('socket.io'); // Thêm socket.io
 const crypto = require('crypto');
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 
-const JWT_SECRET = 'lingovoyage_secret_key_2026_super_secure';
+const JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET) {
+    console.error("❌ FATAL: JWT_SECRET is not defined in .env");
+    process.exit(1);
+}
 const JWT_EXPIRES_IN = '7d';
 
 mongoose.set('bufferCommands', false);
@@ -27,7 +32,11 @@ const userSockets = new Map();
 app.use(cors());
 app.use(express.json());
 
-const MONGODB_URI = "mongodb+srv://luong1305960_db_user:nd1305tl@cluster0.m3tyt2p.mongodb.net/DoAn_LingoVoyage?appName=Cluster0";
+const MONGODB_URI = process.env.MONGODB_URI;
+if (!MONGODB_URI) {
+    console.error("❌ FATAL: MONGODB_URI is not defined in .env");
+    process.exit(1);
+}
 
 // ==========================================
 // HELPERS
@@ -237,20 +246,41 @@ async function updateStreak(userId) {
         const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
 
         if (diffDays === 0) {
-            return;
+            return; // Đã học hôm nay rồi
         } else if (diffDays === 1) {
-            user.streak += 1;
+            user.streak += 1; // Học liên tiếp
         } else {
-            user.streak = 1;
+            user.streak = 1; // Bỏ lỡ nhiều ngày, bắt đầu lại từ 1
         }
     } else {
-        // Lần đầu hoạt động
-        user.streak = 1;
+        user.streak = 1; // Lần đầu học
     }
 
     user.lastActivityDate = now;
     await user.save();
     console.log(`🔥 Streak updated for ${user.username}: ${user.streak} ngày`);
+}
+
+// ==========================================
+// HELPER: Kiểm tra và Reset Streak nếu quá hạn
+// ==========================================
+async function checkStreak(user) {
+    if (!user.lastActivityDate) return;
+
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const lastDate = new Date(user.lastActivityDate);
+    const lastDay = new Date(lastDate.getFullYear(), lastDate.getMonth(), lastDate.getDate());
+
+    const diffTime = today.getTime() - lastDay.getTime();
+    const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
+
+    // Nếu quá 1 ngày không học (diffDays > 1), reset streak về 0
+    if (diffDays > 1) {
+        user.streak = 0;
+        await user.save();
+        console.log(`❄️ Streak reset for ${user.username} (missed ${diffDays - 1} days)`);
+    }
 }
 
 // ==========================================
@@ -347,8 +377,9 @@ const authMiddleware = async (req, res, next) => {
             return res.status(401).json({ message: 'Token không hợp lệ hoặc tài khoản đã bị vô hiệu hóa' });
         }
 
-        // Tự động kiểm tra reset tuần mỗi khi user thao tác
+        // Tự động kiểm tra reset tuần và streak mỗi khi user thao tác
         await checkAndResetWeeklyXP(user);
+        await checkStreak(user);
 
         req.user = user;
         next();
@@ -603,7 +634,10 @@ app.get('/api/provinces/:slug', async (req, res) => {
         province.vocabCount = totalVocabs;
 
         // Tăng lượt xem
-        await Province.updateOne({ _id: province._id }, { $inc: { views: 1 } });
+        if (req.query.noview !== '1') {
+            await Province.updateOne({ _id: province._id }, { $inc: { views: 1 } });
+            province.views = (province.views || 0) + 1;
+        }
 
         res.json(province);
     } catch (error) {
@@ -722,8 +756,10 @@ app.get('/api/provinces/:provinceSlug/landmarks/:landmarkSlug', async (req, res)
             return res.status(404).json({ message: 'Không tìm thấy địa danh' });
         }
         // Tăng lượt xem
-        landmark.views += 1;
-        await landmark.save();
+        if (req.query.noview !== '1') {
+            landmark.views += 1;
+            await landmark.save();
+        }
 
         // Lấy danh sách từ vựng đi kèm (Dùng cả ID và Slug cho chắc chắn)
         const vocabularies = await Vocabulary.find({
@@ -917,7 +953,7 @@ app.get('/api/admin/stats', async (req, res) => {
         ]);
 
         const totalViews = await Landmark.aggregate([{ $group: { _id: null, total: { $sum: '$views' } } }]);
-        const todayStart = new Date(); todayStart.setHours(0,0,0,0);
+        const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
         const newUsersToday = await User.countDocuments({ createdAt: { $gte: todayStart } });
         const weekStart = new Date(); weekStart.setDate(weekStart.getDate() - 7);
         const newUsersThisWeek = await User.countDocuments({ createdAt: { $gte: weekStart } });
@@ -1500,8 +1536,8 @@ app.get('/api/user/quiz/setup', authMiddleware, async (req, res) => {
 // API - CHATBOT (AI Assistant)
 // ==========================================
 
-// Cấu hình Gemini AI (Thay KEY của bạn vào đây)
-const GEMINI_API_KEY = "AIzaSyCm7YPImnLg74ISH7f8mXZKfcMieXy1i9M";
+// Cấu hình Gemini AI
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
 
 app.post('/api/chatbot/chat', authMiddleware, async (req, res) => {

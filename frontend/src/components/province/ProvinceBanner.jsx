@@ -32,10 +32,16 @@ export default function ProvinceBanner({ province }) {
     return () => { isMounted = false; };
   }, [systemLang, tSystem, rawName, rawDesc]);
 
+  const formatViews = (v) => {
+    if (!v) return 0;
+    if (v >= 1000) return `${(v / 1000).toFixed(1)}k`;
+    return v;
+  };
+
   const stats = [
     { label: texts.landmarks, value: province?.landmarkCount || 0 },
     { label: texts.vocab, value: province?.vocabCount || 0 },
-    { label: texts.views, value: `${((province?.views || 0) / 1000).toFixed(1)}k` },
+    { label: texts.views, value: formatViews(province?.views) },
   ];
 
   return (

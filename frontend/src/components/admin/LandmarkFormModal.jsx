@@ -50,9 +50,10 @@ export default function LandmarkFormModal({ isOpen, landmark, provinces, onClose
     if (!form.provinceSlug) { toast.warning('Vui lòng chọn tỉnh!'); return; }
     setSaving(true);
     try {
+      const payload = { ...form, images: form.images.filter(img => img.trim() !== '') };
       const url = landmark ? `${API}/landmarks/${landmark._id}` : `${API}/provinces/${form.provinceSlug}/landmarks`;
       const method = landmark ? 'PUT' : 'POST';
-      const res = await fetch(url, { method, headers:{'Content-Type':'application/json'}, body:JSON.stringify(form) });
+      const res = await fetch(url, { method, headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload) });
       if (!res.ok) { const err = await res.json(); throw new Error(err.message); }
       const saved = await res.json();
       toast.success(landmark ? `Đã cập nhật "${form.name}"!` : `Đã thêm "${form.name}"!`);
@@ -67,18 +68,25 @@ export default function LandmarkFormModal({ isOpen, landmark, provinces, onClose
   };
 
   const handleAddVocab = async () => {
-    if (!vf.word || !vf.meaning) { toast.warning('Vui lòng nhập từ và nghĩa!'); return; }
+    if (!vf.highlightText) { toast.warning('Vui lòng nhập từ gạch chân!'); return; }
     if (!landmark?._id) { toast.warning('Vui lòng lưu địa danh trước khi thêm từ vựng!'); return; }
     setSavingVocab(true);
+
+    const payload = {
+      ...vf,
+      word: vf.highlightText,
+      meaning: vf.highlightText
+    };
+
     try {
       if (editingVocabId) {
-        const res = await fetch(`${API}/vocabularies/${editingVocabId}`, { method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify(vf) });
+        const res = await fetch(`${API}/vocabularies/${editingVocabId}`, { method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload) });
         if (!res.ok) throw new Error('Cập nhật thất bại');
-        toast.success(`Đã cập nhật "${vf.word}"!`);
+        toast.success(`Đã cập nhật "${payload.word}"!`);
       } else {
-        const res = await fetch(`${API}/landmarks/${landmark._id}/vocabularies`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(vf) });
+        const res = await fetch(`${API}/landmarks/${landmark._id}/vocabularies`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload) });
         if (!res.ok) throw new Error('Thêm thất bại');
-        toast.success(`Đã thêm từ "${vf.word}"!`);
+        toast.success(`Đã thêm từ "${payload.word}"!`);
       }
       resetVocabForm();
       loadVocabs(landmark._id);
@@ -88,7 +96,7 @@ export default function LandmarkFormModal({ isOpen, landmark, provinces, onClose
   };
 
   const handleEditVocab = (v) => {
-    setVf({ word:v.word, meaning:v.meaning, pronunciation:v.pronunciation||'', example:v.example||'', partOfSpeech:v.partOfSpeech||'danh từ', difficulty:v.difficulty||1, highlightText:v.highlightText||'' });
+    setVf({ word:v.word, meaning:v.meaning, pronunciation:v.pronunciation||'', example:v.example||'', partOfSpeech:v.partOfSpeech||'danh từ', difficulty:v.difficulty||1, highlightText:v.highlightText||v.word||'' });
     setEditingVocabId(v._id);
   };
 
@@ -168,10 +176,10 @@ export default function LandmarkFormModal({ isOpen, landmark, provinces, onClose
 
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-2">Link ảnh (mỗi dòng 1 link)</label>
-                <textarea value={form.images.join('\n')} onChange={e=>setForm(f=>({...f,images:e.target.value.split('\n').filter(Boolean)}))} rows={2} className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary text-sm resize-none font-mono" placeholder="https://..." />
-                {form.images.filter(Boolean).length > 0 && (
+                <textarea value={form.images.join('\n')} onChange={e=>setForm(f=>({...f,images:e.target.value.split('\n')}))} rows={3} className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary text-sm resize-none font-mono" placeholder="https://..." />
+                {form.images.filter(img => img.trim() !== '').length > 0 && (
                   <div className="flex gap-2 mt-3 overflow-x-auto pb-2">
-                    {form.images.filter(Boolean).map((img,i) => <img key={i} src={img} className="w-20 h-14 rounded-lg object-cover border border-gray-200 shrink-0" onError={e=>{e.target.style.display='none'}} />)}
+                    {form.images.filter(img => img.trim() !== '').map((img,i) => <img key={i} src={img} className="w-20 h-14 rounded-lg object-cover border border-gray-200 shrink-0" onError={e=>{e.target.style.display='none'}} />)}
                   </div>
                 )}
               </div>
@@ -194,12 +202,9 @@ export default function LandmarkFormModal({ isOpen, landmark, provinces, onClose
               {/* Add/Edit vocab form */}
               <div className="bg-gray-50 border border-gray-200 rounded-xl p-5">
                 <h4 className="text-sm font-bold text-gray-700 mb-3">{editingVocabId ? '✏️ Sửa từ vựng' : '➕ Thêm từ vựng mới'}</h4>
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                  <input type="text" placeholder="Từ tiếng Việt *" value={vf.word} onChange={e=>setVf(v=>({...v,word:e.target.value}))} className="px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary" />
-                  <input type="text" placeholder="Nghĩa / Giải thích *" value={vf.meaning} onChange={e=>setVf(v=>({...v,meaning:e.target.value}))} className="px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary" />
-                  <input type="text" placeholder="Phiên âm" value={vf.pronunciation} onChange={e=>setVf(v=>({...v,pronunciation:e.target.value}))} className="px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary" />
-                  <input type="text" placeholder="Ví dụ" value={vf.example} onChange={e=>setVf(v=>({...v,example:e.target.value}))} className="px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary" />
-                  <input type="text" placeholder="Từ gạch chân trong mô tả" value={vf.highlightText} onChange={e=>setVf(v=>({...v,highlightText:e.target.value}))} className="px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary bg-yellow-50" />
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <input type="text" placeholder="Từ gạch chân trong mô tả *" value={vf.highlightText} onChange={e=>setVf(v=>({...v,highlightText:e.target.value}))} className="px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary bg-yellow-50" />
+                  <input type="text" placeholder="Ví dụ tiếng Việt" value={vf.example} onChange={e=>setVf(v=>({...v,example:e.target.value}))} className="px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary" />
                   <select value={vf.difficulty} onChange={e=>setVf(v=>({...v,difficulty:Number(e.target.value)}))} className="px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary cursor-pointer">
                     <option value={1}>Dễ</option><option value={2}>Trung bình</option><option value={3}>Khó</option>
                   </select>
@@ -229,14 +234,11 @@ export default function LandmarkFormModal({ isOpen, landmark, provinces, onClose
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
                           <span className="font-bold text-gray-800">{v.word}</span>
-                          <span className="text-gray-300">→</span>
-                          <span className="text-gray-600">{v.meaning}</span>
                           <span className={`text-[10px] px-2 py-0.5 rounded-md font-bold ${DIFF_COLOR[v.difficulty]||'bg-gray-100 text-gray-500'}`}>{DIFF_LABEL[v.difficulty]||'?'}</span>
                         </div>
                         <div className="flex gap-3 mt-1 text-xs text-gray-400 flex-wrap">
-                          {v.pronunciation && <span>🔊 {v.pronunciation}</span>}
                           {v.example && <span>💬 {v.example}</span>}
-                          {v.highlightText && <span className="bg-yellow-50 text-yellow-600 px-1.5 rounded">gạch chân: "{v.highlightText}"</span>}
+                          {v.highlightText && v.highlightText !== v.word && <span className="bg-yellow-50 text-yellow-600 px-1.5 rounded">gạch chân: "{v.highlightText}"</span>}
                         </div>
                       </div>
                       <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">

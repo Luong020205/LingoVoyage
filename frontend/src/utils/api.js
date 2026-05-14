@@ -8,8 +8,9 @@ export async function fetchProvinces(params = {}) {
   return res.json();
 }
 
-export async function fetchProvinceBySlug(slug) {
-  const res = await fetch(`${API_BASE}/provinces/${slug}`);
+export async function fetchProvinceBySlug(slug, options = {}) {
+  const query = options.noview ? '?noview=1' : '';
+  const res = await fetch(`${API_BASE}/provinces/${slug}${query}`, { signal: options.signal });
   if (!res.ok) throw new Error('Không tìm thấy tỉnh thành');
   return res.json();
 }
@@ -22,8 +23,9 @@ export async function fetchLandmarks(provinceSlug, params = {}) {
   return res.json();
 }
 
-export async function fetchLandmarkBySlug(provinceSlug, landmarkSlug) {
-  const res = await fetch(`${API_BASE}/provinces/${provinceSlug}/landmarks/${landmarkSlug}`);
+export async function fetchLandmarkBySlug(provinceSlug, landmarkSlug, options = {}) {
+  const query = options.noview ? '?noview=1' : '';
+  const res = await fetch(`${API_BASE}/provinces/${provinceSlug}/landmarks/${landmarkSlug}${query}`, { signal: options.signal });
   if (!res.ok) throw new Error('Không tìm thấy địa danh');
   return res.json();
 }

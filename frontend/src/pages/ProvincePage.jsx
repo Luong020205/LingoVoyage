@@ -53,18 +53,22 @@ export default function ProvincePage() {
   }, [systemLang, tSystem]);
 
   useEffect(() => {
+    const controller = new AbortController();
     const loadProvince = async () => {
       try {
         setLoading(true);
-        const provData = await fetchProvinceBySlug(slug);
+        const provData = await fetchProvinceBySlug(slug, { signal: controller.signal });
         setProvince(provData);
       } catch (err) {
-        setError(err.message);
+        if (err.name !== 'AbortError') {
+          setError(err.message);
+        }
       } finally {
         setLoading(false);
       }
     };
     loadProvince();
+    return () => controller.abort();
   }, [slug]);
 
   useEffect(() => {
