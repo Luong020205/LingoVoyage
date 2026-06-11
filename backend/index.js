@@ -10,6 +10,8 @@ const http = require('http'); // Thêm http
 const { Server } = require('socket.io'); // Thêm socket.io
 const crypto = require('crypto');
 const { GoogleGenerativeAI } = require("@google/generative-ai");
+const { OAuth2Client } = require('google-auth-library');
+const emailService = require('./services/emailService');
 
 const JWT_SECRET = process.env.JWT_SECRET;
 if (!JWT_SECRET) {
@@ -129,6 +131,7 @@ const vocabularySchema = new mongoose.Schema({
     difficulty: { type: Number, enum: [1, 2, 3], default: 1 }, // 1=Dễ, 2=TB, 3=Khó
     category: { type: String, default: 'general' },
     highlightText: { type: String, default: '' },
+    highlightPosition: { type: Number, default: 1, min: 1 }, // Vị trí xuất hiện muốn highlight (1 = lần đầu, 2 = lần thứ 2, ...)
     sourceLanguage: { type: String, default: 'vi' },
 
     // THÊM: Câu hỏi tùy chỉnh do Admin soạn
@@ -284,46 +287,56 @@ async function checkStreak(user) {
 }
 
 // ==========================================
-// HELPER: Reset XP tuần và trao danh hiệu
+// HELPER: Reset XP tuần và trao danh hiệu (Global)
 // ==========================================
-async function checkAndResetWeeklyXP(user) {
+async function performGlobalWeeklyReset() {
     const currentWeek = getCurrentWeekCode();
-    if (user.lastResetWeek === currentWeek) return;
-
+    
     try {
-        // 1. Tính toán thứ hạng trong nhóm bạn bè trước khi reset
-        const following = await Friendship.find({ requester: user._id }).select('recipient').lean();
-        const friendIds = following.map(f => f.recipient);
-        friendIds.push(user._id);
+        // Tìm tất cả user chưa reset tuần này
+        const usersToReset = await User.find({ lastResetWeek: { $ne: currentWeek } });
+        if (usersToReset.length === 0) return;
 
-        const friendsList = await User.find({ _id: { $in: friendIds } })
-            .sort({ weeklyXP: -1 })
-            .select('_id weeklyXP')
-            .lean();
+        console.log(`🔄 [Weekly Reset] Resetting weekly XP for ${usersToReset.length} users to week ${currentWeek}...`);
 
-        const myRank = friendsList.findIndex(u => u._id.toString() === user._id.toString());
+        // Load tất cả user để tính rank đúng dựa trên XP trước khi reset
+        const allUsers = await User.find({ isActive: true }).select('_id username weeklyXP badges lastResetWeek').lean();
+        const userMap = new Map(allUsers.map(u => [u._id.toString(), u]));
 
-        const update = {
-            $set: { weeklyXP: 0, lastResetWeek: currentWeek }
-        };
+        for (const user of usersToReset) {
+            try {
+                // 1. Tính toán thứ hạng trong nhóm bạn bè trước khi reset
+                const following = await Friendship.find({ requester: user._id }).select('recipient').lean();
+                const friendIds = following.map(f => f.recipient.toString());
+                friendIds.push(user._id.toString());
 
-        // 2. Trao danh hiệu nếu nằm trong Top 3 (vàng, bạc, đồng) và có học bài (weeklyXP > 0)
-        if (user.weeklyXP > 0 && myRank >= 0 && myRank <= 2) {
-            const badgeType = myRank === 0 ? 'badges.gold' : (myRank === 1 ? 'badges.silver' : 'badges.bronze');
-            update.$inc = { [badgeType]: 1 };
-            console.log(`🏆 Awarded ${badgeType} to ${user.username} (Rank ${myRank + 1})`);
+                // Lấy thông tin XP của bạn bè từ userMap trước khi reset
+                const friendsList = friendIds
+                    .map(id => userMap.get(id))
+                    .filter(Boolean)
+                    .sort((a, b) => b.weeklyXP - a.weeklyXP);
+
+                const myRank = friendsList.findIndex(u => u._id.toString() === user._id.toString());
+
+                const update = {
+                    $set: { weeklyXP: 0, lastResetWeek: currentWeek }
+                };
+
+                // 2. Trao danh hiệu nếu nằm trong Top 3 (vàng, bạc, đồng) và có học bài (weeklyXP > 0)
+                if (user.weeklyXP > 0 && myRank >= 0 && myRank <= 2) {
+                    const badgeType = myRank === 0 ? 'badges.gold' : (myRank === 1 ? 'badges.silver' : 'badges.bronze');
+                    update.$inc = { [badgeType]: 1 };
+                    console.log(`🏆 [Weekly Reset] Awarded ${badgeType} to ${user.username} (Rank ${myRank + 1}, XP: ${user.weeklyXP})`);
+                }
+
+                await User.findByIdAndUpdate(user._id, update);
+            } catch (err) {
+                console.error(`❌ Error resetting weekly XP for user ${user?.username || user?._id}:`, err);
+            }
         }
-
-        const updatedUser = await User.findByIdAndUpdate(user._id, update, { new: true });
-
-        // Cập nhật lại object để dùng tiếp trong request
-        if (updatedUser) {
-            user.weeklyXP = updatedUser.weeklyXP;
-            user.lastResetWeek = updatedUser.lastResetWeek;
-            user.badges = updatedUser.badges;
-        }
+        console.log(`✅ [Weekly Reset] Global weekly reset completed.`);
     } catch (err) {
-        console.error("❌ Error resetting weekly XP:", err);
+        console.error("❌ Error performing global weekly reset:", err);
     }
 }
 
@@ -372,13 +385,13 @@ const authMiddleware = async (req, res, next) => {
         }
         const token = authHeader.split(' ')[1];
         const decoded = jwt.verify(token, JWT_SECRET);
+        // Tự động kiểm tra reset tuần và streak mỗi khi user thao tác
+        await performGlobalWeeklyReset();
+
         const user = await User.findById(decoded.id);
         if (!user || !user.isActive) {
             return res.status(401).json({ message: 'Token không hợp lệ hoặc tài khoản đã bị vô hiệu hóa' });
         }
-
-        // Tự động kiểm tra reset tuần và streak mỗi khi user thao tác
-        await checkAndResetWeeklyXP(user);
         await checkStreak(user);
 
         req.user = user;
@@ -428,6 +441,10 @@ const startServer = async () => {
     try {
         await mongoose.connect(MONGODB_URI);
         console.log("✅ MongoDB");
+
+        // Reset trạng thái online của tất cả user về false khi khởi động lại server
+        await User.updateMany({}, { $set: { isOnline: false } });
+        console.log("🔄 Reset online status of all users to offline at startup");
 
         // ==========================================
         // API - SOCIAL & LEADERBOARD
@@ -497,9 +514,6 @@ const startServer = async () => {
                 const userId = req.user._id;
                 const { scope = 'friends' } = req.query; // 'global' hoặc 'friends'
                 const currentWeek = getCurrentWeekCode();
-
-                // 1. Kiểm tra Reset tuần
-                await checkAndResetWeeklyXP(req.user);
 
                 let query = {};
                 if (scope === 'friends') {
@@ -1163,6 +1177,137 @@ app.post('/api/auth/login', async (req, res) => {
     }
 });
 
+// ĐĂNG NHẬP BẰNG GOOGLE
+app.post('/api/auth/google', async (req, res) => {
+    try {
+        const { credential } = req.body;
+        if (!credential) {
+            return res.status(400).json({ message: 'Không tìm thấy thông tin đăng nhập Google' });
+        }
+
+        const clientId = process.env.GOOGLE_CLIENT_ID;
+        if (!clientId || clientId === 'YOUR_GOOGLE_CLIENT_ID_PLACEHOLDER') {
+            console.error('❌ Google Client ID is not configured in .env');
+            return res.status(500).json({ message: 'Chức năng đăng nhập Google chưa được cấu hình ở hệ thống' });
+        }
+
+        const googleClient = new OAuth2Client(clientId);
+        let payload;
+        try {
+            const ticket = await googleClient.verifyIdToken({
+                idToken: credential,
+                audience: clientId,
+            });
+            payload = ticket.getPayload();
+        } catch (verifyErr) {
+            console.error('❌ Google ID Token verification failed:', verifyErr.message);
+            return res.status(401).json({ message: 'Xác thực tài khoản Google thất bại hoặc phiên đăng nhập hết hạn' });
+        }
+
+        const { email, name, picture, email_verified } = payload;
+
+        if (!email_verified) {
+            return res.status(400).json({ message: 'Tài khoản Google của bạn chưa được xác minh' });
+        }
+
+        // Tìm user theo email
+        let user = await User.findOne({ email: email.toLowerCase() });
+
+        if (user) {
+            // Check active
+            if (!user.isActive) {
+                return res.status(403).json({ message: 'Tài khoản đã bị vô hiệu hóa. Vui lòng liên hệ quản trị viên.' });
+            }
+
+            // Cập nhật thông tin đăng nhập cuối và avatar nếu thay đổi
+            user.lastLoginAt = new Date();
+            if (picture && !user.avatar) {
+                user.avatar = picture;
+            }
+            await user.save();
+
+            const token = user.generateToken('7d');
+            console.log(`✅ User logged in via Google: ${user.username} (${user.email})`);
+
+            return res.json({
+                message: 'Đăng nhập Google thành công!',
+                token,
+                user: {
+                    _id: user._id,
+                    name: user.name,
+                    username: user.username,
+                    email: user.email,
+                    avatar: user.avatar,
+                    role: user.role,
+                    xp: user.xp,
+                    weeklyXP: user.weeklyXP || 0,
+                    streak: user.streak,
+                    level: user.level,
+                    uiLanguage: user.uiLanguage,
+                    learningLanguage: user.learningLanguage,
+                    badges: user.badges,
+                }
+            });
+        } else {
+            // Đăng ký tự động
+            let baseUsername = email.split('@')[0].toLowerCase().replace(/[^a-z0-9_]/g, '');
+            if (baseUsername.length < 3) baseUsername += 'user';
+            
+            let username = baseUsername;
+            let isUnique = false;
+            let attempts = 0;
+            while (!isUnique && attempts < 10) {
+                const existing = await User.findOne({ username });
+                if (!existing) {
+                    isUnique = true;
+                } else {
+                    username = `${baseUsername}${Math.floor(1000 + Math.random() * 9000)}`;
+                    attempts++;
+                }
+            }
+
+            const randomPassword = crypto.randomBytes(24).toString('hex');
+
+            user = new User({
+                name: name || 'Google User',
+                username,
+                email: email.toLowerCase(),
+                password: randomPassword,
+                avatar: picture || '',
+                uiLanguage: 'vi',
+                learningLanguage: 'en',
+            });
+
+            await user.save();
+            const token = user.generateToken('7d');
+            console.log(`✅ Auto-registered new user via Google: ${user.username} (${user.email})`);
+
+            return res.status(201).json({
+                message: 'Đăng ký và đăng nhập thành công với Google!',
+                token,
+                user: {
+                    _id: user._id,
+                    name: user.name,
+                    username: user.username,
+                    email: user.email,
+                    avatar: user.avatar,
+                    role: user.role,
+                    xp: user.xp,
+                    weeklyXP: user.weeklyXP || 0,
+                    streak: user.streak,
+                    level: user.level,
+                    uiLanguage: user.uiLanguage,
+                    learningLanguage: user.learningLanguage,
+                    badges: user.badges,
+                }
+            });
+        }
+    } catch (error) {
+        console.error('❌ Google auth endpoint error:', error);
+        res.status(500).json({ message: 'Lỗi máy chủ trong quá trình xác thực Google' });
+    }
+});
+
 // LẤY THÔNG TIN USER HIỆN TẠI
 app.get('/api/auth/me', authMiddleware, async (req, res) => {
     try {
@@ -1212,10 +1357,29 @@ app.post('/api/auth/forgot-password', async (req, res) => {
         // Trong production sẽ gửi email thật, ở đây log ra console
         console.log(`🔑 Password reset OTP for ${user.email}: ${otp}`);
 
+        let emailSent = false;
+        // Chỉ gửi email thật nếu email là Gmail/Google (tài khoản Google chính thức)
+        const isGmail = user.email.toLowerCase().endsWith('@gmail.com') || user.email.toLowerCase().endsWith('@googlemail.com');
+
+        if (isGmail) {
+            try {
+                const sent = await emailService.sendOtpEmail(user.email, otp);
+                if (sent) {
+                    emailSent = true;
+                }
+            } catch (emailErr) {
+                console.error('❌ Failed to send OTP email:', emailErr.message);
+                // Nếu có lỗi gửi mail và ở chế độ production thì chặn lại
+                if (process.env.NODE_ENV === 'production') {
+                    return res.status(500).json({ message: 'Không thể gửi email xác nhận. Vui lòng thử lại sau.' });
+                }
+            }
+        }
+
         res.json({
             message: 'Mã xác nhận đã được gửi đến email của bạn.',
-            // CHỈ cho DEV - production phải bỏ dòng này:
-            _devOtp: otp,
+            // CHỈ trả về _devOtp cho các tài khoản tự tạo (không phải Gmail) hoặc khi gửi email thất bại/bị bỏ qua
+            ...((!isGmail || !emailSent) && { _devOtp: otp }),
         });
     } catch (error) {
         console.error('❌ Forgot password error:', error);
@@ -1733,7 +1897,7 @@ async function addXP(userId, xpGained) {
 
     // Nếu đã sang tuần mới, trao badge và reset
     if (user.lastResetWeek !== currentWeek) {
-        await checkAndResetWeeklyXP(user);
+        await performGlobalWeeklyReset();
         // Sau khi reset về 0, ta thiết lập lại dữ liệu update
         updateData = {
             $set: { weeklyXP: finalXP, lastResetWeek: currentWeek },

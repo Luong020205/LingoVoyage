@@ -15,7 +15,7 @@ export default function LandmarkFormModal({ isOpen, landmark, provinces, onClose
   const [form, setForm] = useState({ name:'', slug:'', provinceSlug:'', description:'', history:'', images:[''], category:'Di tích lịch sử', address:'', openHours:'', ticketPrice:'' });
   const [vocabs, setVocabs] = useState([]);
   const [loadingVocabs, setLoadingVocabs] = useState(false);
-  const [vf, setVf] = useState({ word:'', meaning:'', pronunciation:'', example:'', partOfSpeech:'danh từ', difficulty:1, highlightText:'' });
+  const [vf, setVf] = useState({ word:'', meaning:'', pronunciation:'', example:'', partOfSpeech:'danh từ', difficulty:1, highlightText:'', highlightPosition:1 });
   const [savingVocab, setSavingVocab] = useState(false);
   const [editingVocabId, setEditingVocabId] = useState(null);
   const [tab, setTab] = useState('info');
@@ -43,7 +43,7 @@ export default function LandmarkFormModal({ isOpen, landmark, provinces, onClose
     setLoadingVocabs(false);
   };
 
-  const resetVocabForm = () => { setVf({ word:'', meaning:'', pronunciation:'', example:'', partOfSpeech:'danh từ', difficulty:1, highlightText:'' }); setEditingVocabId(null); };
+  const resetVocabForm = () => { setVf({ word:'', meaning:'', pronunciation:'', example:'', partOfSpeech:'danh từ', difficulty:1, highlightText:'', highlightPosition:1 }); setEditingVocabId(null); };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -96,7 +96,7 @@ export default function LandmarkFormModal({ isOpen, landmark, provinces, onClose
   };
 
   const handleEditVocab = (v) => {
-    setVf({ word:v.word, meaning:v.meaning, pronunciation:v.pronunciation||'', example:v.example||'', partOfSpeech:v.partOfSpeech||'danh từ', difficulty:v.difficulty||1, highlightText:v.highlightText||v.word||'' });
+    setVf({ word:v.word, meaning:v.meaning, pronunciation:v.pronunciation||'', example:v.example||'', partOfSpeech:v.partOfSpeech||'danh từ', difficulty:v.difficulty||1, highlightText:v.highlightText||v.word||'', highlightPosition:v.highlightPosition||1 });
     setEditingVocabId(v._id);
   };
 
@@ -209,6 +209,11 @@ export default function LandmarkFormModal({ isOpen, landmark, provinces, onClose
                     <option value={1}>Dễ</option><option value={2}>Trung bình</option><option value={3}>Khó</option>
                   </select>
                 </div>
+                <div className="flex items-center gap-3 mt-3">
+                  <label className="text-xs font-semibold text-gray-500 whitespace-nowrap">📍 Vị trí gạch chân (lần xuất hiện thứ):</label>
+                  <input type="number" min={1} value={vf.highlightPosition} onChange={e=>setVf(v=>({...v,highlightPosition:Math.max(1,Number(e.target.value))}))} className="w-20 px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary text-center" />
+                  <span className="text-xs text-gray-400">1 = lần đầu, 2 = lần thứ 2, ...</span>
+                </div>
                 <div className="flex gap-2 mt-3 justify-end">
                   {editingVocabId && <button type="button" onClick={resetVocabForm} className="px-4 py-2 text-sm bg-gray-200 text-gray-600 rounded-xl hover:bg-gray-300 cursor-pointer">Hủy sửa</button>}
                   <button type="button" onClick={handleAddVocab} disabled={savingVocab} className="px-5 py-2 text-sm bg-primary text-white rounded-xl hover:bg-primary-dark cursor-pointer font-semibold disabled:opacity-50 flex items-center gap-2">
@@ -239,6 +244,7 @@ export default function LandmarkFormModal({ isOpen, landmark, provinces, onClose
                         <div className="flex gap-3 mt-1 text-xs text-gray-400 flex-wrap">
                           {v.example && <span>💬 {v.example}</span>}
                           {v.highlightText && v.highlightText !== v.word && <span className="bg-yellow-50 text-yellow-600 px-1.5 rounded">gạch chân: "{v.highlightText}"</span>}
+                          {v.highlightPosition && v.highlightPosition > 1 && <span className="bg-purple-50 text-purple-600 px-1.5 rounded">vị trí: lần {v.highlightPosition}</span>}
                         </div>
                       </div>
                       <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">

@@ -23,7 +23,7 @@ function HighlightedDescription({ description, vocabularies, onWordClick }) {
     if (vocabularies?.length) {
       activeHighlights = vocabularies
         .filter(v => v.highlightText && v.highlightText.trim())
-        .map(v => ({ text: v.highlightText.trim(), vocab: v }));
+        .map(v => ({ text: v.highlightText.trim(), position: v.highlightPosition || 1, vocab: v }));
       
       activeHighlights.sort((a, b) => b.text.length - a.text.length);
     }
@@ -31,11 +31,60 @@ function HighlightedDescription({ description, vocabularies, onWordClick }) {
     setHighlights(activeHighlights);
 
     if (activeHighlights.length === 0) {
-      setParts([description]);
+      setParts([{ text: description, vocab: null }]);
     } else {
-      const pattern = activeHighlights.map(h => h.text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');
-      const regex = new RegExp(`(${pattern})`, 'gi');
-      setParts(description.split(regex));
+      // Tìm vị trí cụ thể của từng từ cần highlight dựa trên highlightPosition
+      // Mỗi entry: { start, end, vocab }
+      const markedRanges = [];
+
+      for (const h of activeHighlights) {
+        const searchText = h.text.toLowerCase();
+        const descLower = description.toLowerCase();
+        let occurrenceCount = 0;
+        let searchFrom = 0;
+
+        while (searchFrom < descLower.length) {
+          const foundIdx = descLower.indexOf(searchText, searchFrom);
+          if (foundIdx === -1) break;
+          occurrenceCount++;
+
+          if (occurrenceCount === h.position) {
+            // Kiểm tra không trùng lấp với range đã có
+            const newStart = foundIdx;
+            const newEnd = foundIdx + h.text.length;
+            const overlaps = markedRanges.some(r => 
+              (newStart < r.end && newEnd > r.start)
+            );
+            if (!overlaps) {
+              markedRanges.push({ start: newStart, end: newEnd, vocab: h.vocab });
+            }
+            break;
+          }
+
+          searchFrom = foundIdx + 1;
+        }
+      }
+
+      // Sắp xếp theo vị trí xuất hiện trong text
+      markedRanges.sort((a, b) => a.start - b.start);
+
+      // Tách description thành các phần: text thường + text highlight
+      const newParts = [];
+      let cursor = 0;
+
+      for (const range of markedRanges) {
+        if (cursor < range.start) {
+          newParts.push({ text: description.substring(cursor, range.start), vocab: null });
+        }
+        newParts.push({ text: description.substring(range.start, range.end), vocab: range.vocab });
+        cursor = range.end;
+      }
+
+      if (cursor < description.length) {
+        newParts.push({ text: description.substring(cursor), vocab: null });
+      }
+
+      setParts(newParts);
     }
   }, [description, vocabularies]);
 
@@ -48,8 +97,9 @@ function HighlightedDescription({ description, vocabularies, onWordClick }) {
       }
       
       const result = await Promise.all(parts.map(async (part) => {
-        if (!part || !part.trim()) return part;
-        return await tLearning(part);
+        if (!part.text || !part.text.trim()) return part;
+        const translated = await tLearning(part.text);
+        return { ...part, translatedText: translated };
       }));
       
       if (isMounted) setTranslatedParts(result);
@@ -66,21 +116,20 @@ function HighlightedDescription({ description, vocabularies, onWordClick }) {
 
   return (
     <p>
-      {translatedParts.map((tPart, idx) => {
-        const originalPart = parts[idx];
-        const matched = highlights.find(h => h.text.toLowerCase() === originalPart.toLowerCase());
-        if (matched) {
+      {translatedParts.map((part, idx) => {
+        const displayText = part.translatedText || part.text;
+        if (part.vocab) {
           return (
             <span
               key={idx}
-              onClick={() => onWordClick(matched.vocab)}
+              onClick={() => onWordClick(part.vocab)}
               className="text-primary font-semibold underline decoration-primary/40 decoration-2 underline-offset-2 cursor-pointer hover:bg-primary/10 hover:decoration-primary px-0.5 rounded transition-all"
             >
-              {tPart}
+              {displayText}
             </span>
           );
         }
-        return <span key={idx}>{tPart}</span>;
+        return <span key={idx}>{displayText}</span>;
       })}
     </p>
   );

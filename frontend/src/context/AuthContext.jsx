@@ -75,6 +75,22 @@ export function AuthProvider({ children }) {
     return data;
   }, []);
 
+  // ĐĂNG NHẬP BẰNG GOOGLE
+  const loginWithGoogle = useCallback(async (credential) => {
+    const res = await fetch(`${API_BASE}/auth/google`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ credential }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw data;
+
+    setUser(data.user);
+    setToken(data.token);
+    localStorage.setItem('lv_token', data.token);
+    return data;
+  }, []);
+
   // ĐĂNG KÝ
   const register = useCallback(async (formData) => {
     const res = await fetch(`${API_BASE}/auth/register`, {
@@ -141,6 +157,7 @@ export function AuthProvider({ children }) {
       isAuthenticated,
       loading,
       login,
+      loginWithGoogle,
       register,
       logout,
       forgotPassword,
